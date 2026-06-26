@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Avatool Recovery</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #151922;
+      --border: #2a3140;
+      --text: #eef2ff;
+      --muted: #9aa4b2;
+      --accent: #60a5fa;
+      --accent-2: #1d4ed8;
+      --warn: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans JP", sans-serif;
+      background: radial-gradient(circle at top, #162033 0%, var(--bg) 58%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .panel {
+      background: rgba(21, 25, 34, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .meta, .actions, .stack {
+      margin-top: 18px;
+    }
+    .meta-row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      padding: 8px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .meta-row:first-child { border-top: 0; }
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .value {
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(96, 165, 250, 0.25);
+      background: rgba(96, 165, 250, 0.08);
+      color: #dbeafe;
+      min-height: 48px;
+    }
+    .status.error {
+      border-color: rgba(251, 113, 133, 0.35);
+      background: rgba(190, 24, 93, 0.08);
+      color: #fecdd3;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    button {
+      border: 1px solid var(--border);
+      background: #101521;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent-2), var(--accent));
+      border-color: rgba(96, 165, 250, 0.5);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    pre {
+      margin: 0;
+      max-height: 220px;
+      overflow: auto;
+      background: #0a0d14;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 14px;
+      color: #cbd5e1;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>UI の起動に失敗しました</h1>
+      <p>renderer が起動途中で停止しました。ここから再試行、ログ確認、更新確認を行えます。</p>
+
+      <div class="status" id="status-box">状態を読み込み中...</div>
+
+      <div class="actions">
+        <button class="primary" id="retry-btn">再試行</button>
+        <button id="check-update-btn">更新を確認</button>
+        <button id="download-update-btn">更新をダウンロード</button>
+        <button id="install-update-btn">更新を適用</button>
+        <button id="log-btn">ログを開く</button>
+        <button id="restart-btn">アプリ再起動</button>
+      </div>
+
+      <div class="meta" id="meta-box"></div>
+
+      <div class="stack">
+        <div class="label">Stack</div>
+        <pre id="stack-box">(stack unavailable)</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusBox = document.getElementById('status-box');
+    const metaBox = document.getElementById('meta-box');
+    const stackBox = document.getElementById('stack-box');
+    const retryBtn = document.getElementById('retry-btn');
+    const checkUpdateBtn = document.getElementById('check-update-btn');
+    const downloadUpdateBtn = document.getElementById('download-update-btn');
+    const installUpdateBtn = document.getElementById('install-update-btn');
+    const logBtn = document.getElementById('log-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    function setBusy(on) {
+      [retryBtn, checkUpdateBtn, downloadUpdateBtn, installUpdateBtn, logBtn, restartBtn]
+        .forEach((button) => { button.disabled = on; });
+    }
+
+    function setStatus(message, isError = false) {
+      statusBox.textContent = String(message || '');
+      statusBox.classList.toggle('error', Boolean(isError));
+    }
+
+    function addMetaRow(label, value) {
+      const row = document.createElement('div');
+      row.className = 'meta-row';
+      const key = document.createElement('div');
+      key.className = 'label';
+      key.textContent = label;
+      const val = document.createElement('div');
+      val.className = 'value';
+      val.textContent = value || '-';
+      row.appendChild(key);
+      row.appendChild(val);
+      metaBox.appendChild(row);
+    }
+
+    async function refreshRecoveryState() {
+      const res = await window.boothAPI.getRendererRecoveryState();
+      const fatal = res?.fatal || null;
+      metaBox.innerHTML = '';
+      addMetaRow('App', res?.appVersion || '-');
+      addMetaRow('Type', fatal?.kind || '-');
+      addMetaRow('When', fatal?.timestamp || '-');
+      addMetaRow('File', fatal?.filename || fatal?.href || '-');
+      addMetaRow('Line', fatal?.lineno ? `${fatal.lineno}:${fatal.colno || 0}` : '-');
+      addMetaRow('Message', fatal?.message || 'Renderer failed to start.');
+      stackBox.textContent = fatal?.stack || '(stack unavailable)';
+      setStatus('Recovery window is active. Retry the UI or update the app.', false);
+    }
+
+    async function runAction(action, onSuccessMessage) {
+      try {
+        setBusy(true);
+        const result = await action();
+        if (result?.error) {
+          setStatus(result.error, true);
+          return;
+        }
+        setStatus(onSuccessMessage || '完了しました。', false);
+      } catch (error) {
+        setStatus(error?.message || String(error), true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    retryBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.reopenMainWindow(), 'UI を再起動しています...');
+    });
+
+    checkUpdateBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.checkAppUpdate(true), '更新確認を実行しました。');
+    });
+
+    downloadUpdateBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.startAppUpdateDownload(), '更新のダウンロードを開始しました。');
+    });
+
+    installUpdateBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.installAppUpdateNow(), '更新適用を開始しました。');
+    });
+
+    logBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.openRuntimeLogWindow(), 'ログウィンドウを開きました。');
+    });
+
+    restartBtn.addEventListener('click', async () => {
+      await runAction(() => window.boothAPI.restartApp(), 'アプリを再起動しています...');
+    });
+
+    window.boothAPI.onAppUpdateStatus((payload) => {
+      const phase = String(payload?.phase || '');
+      const message = String(payload?.message || '').trim();
+      if (!message && !phase) return;
+      setStatus(message || `update: ${phase}`, phase === 'error');
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshRecoveryState().catch((error) => {
+        setStatus(error?.message || String(error), true);
+      });
+    });
+  </script>
+</body>
+</html>

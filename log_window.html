@@ -1,0 +1,172 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'"
+  >
+  <title>Avatool Runtime Logs</title>
+  <style>
+    :root {
+      --bg: #0a0c10;
+      --panel: #10141b;
+      --line: #252b36;
+      --txt: #d7dde8;
+      --muted: #94a0b2;
+      --err: #ff6b6b;
+      --warn: #ffd166;
+      --ok: #7bd389;
+    }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt); font-family: Consolas, "Courier New", monospace; }
+    .wrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+    .toolbar {
+      display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #121824, #0f141d);
+    }
+    .title { font-size: 12px; font-weight: 700; letter-spacing: 0.03em; color: #eef3ff; }
+    .meta { font-size: 11px; color: var(--muted); margin-left: auto; }
+    .btn {
+      border: 1px solid #2e3644; background: #171d28; color: var(--txt); border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer;
+    }
+    .btn:hover { background: #1d2532; }
+    #log-list { padding: 8px 10px; overflow: auto; }
+    .row { border-bottom: 1px solid #1c222c; padding: 5px 2px; line-height: 1.35; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .row .head { color: var(--muted); margin-bottom: 2px; }
+    .row.error .head { color: var(--err); }
+    .row.warn .head { color: var(--warn); }
+    .row.log .head { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <div class="title">Avatool Runtime Logs</div>
+      <button id="copy-all-btn" class="btn">全コピー</button>
+      <button id="copy-selected-btn" class="btn">選択コピー</button>
+      <button id="clear-btn" class="btn">クリア</button>
+      <button id="toggle-follow-btn" class="btn">追従: ON</button>
+      <div id="meta" class="meta">0 lines</div>
+    </div>
+    <div id="log-list"></div>
+  </div>
+  <script>
+    (() => {
+      const logList = document.getElementById('log-list');
+      const meta = document.getElementById('meta');
+      const clearBtn = document.getElementById('clear-btn');
+      const copyAllBtn = document.getElementById('copy-all-btn');
+      const copySelectedBtn = document.getElementById('copy-selected-btn');
+      const followBtn = document.getElementById('toggle-follow-btn');
+      const rows = [];
+      const maxRows = 2000;
+      let follow = true;
+
+      function esc(s) {
+        return String(s || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function renderMeta() {
+        meta.textContent = rows.length + ' lines';
+      }
+
+      function appendRow(entry) {
+        rows.push(entry);
+        if (rows.length > maxRows) rows.splice(0, rows.length - maxRows);
+        const level = String(entry?.level || 'log');
+        const ts = String(entry?.ts || '');
+        const source = String(entry?.source || 'main');
+        const msg = String(entry?.message || '');
+        const el = document.createElement('div');
+        el.className = 'row ' + level;
+        el.innerHTML = '<div class="head">[' + esc(ts) + '] [' + esc(source) + '] [' + esc(level.toUpperCase()) + ']</div><div>' + esc(msg) + '</div>';
+        logList.appendChild(el);
+        while (logList.children.length > maxRows) {
+          logList.removeChild(logList.firstChild);
+        }
+        renderMeta();
+        if (follow) {
+          logList.scrollTop = logList.scrollHeight;
+        }
+      }
+
+      function resetRows(newRows) {
+        rows.splice(0, rows.length);
+        logList.innerHTML = '';
+        (Array.isArray(newRows) ? newRows : []).forEach((r) => appendRow(r));
+      }
+
+      function toCopyText() {
+        return rows.map((r) => {
+          const ts = String(r?.ts || '');
+          const source = String(r?.source || 'main');
+          const level = String(r?.level || 'log').toUpperCase();
+          const msg = String(r?.message || '');
+          return `[${ts}] [${source}] [${level}] ${msg}`;
+        }).join('\n');
+      }
+
+      async function copyText(text) {
+        const v = String(text || '');
+        if (!v) return false;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(v);
+            return true;
+          }
+        } catch {}
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = v;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return Boolean(ok);
+        } catch {
+          return false;
+        }
+      }
+
+      clearBtn.addEventListener('click', () => {
+        rows.splice(0, rows.length);
+        logList.innerHTML = '';
+        renderMeta();
+      });
+      copyAllBtn.addEventListener('click', async () => {
+        const ok = await copyText(toCopyText());
+        copyAllBtn.textContent = ok ? 'コピー完了' : 'コピー失敗';
+        setTimeout(() => { copyAllBtn.textContent = '全コピー'; }, 1000);
+      });
+      copySelectedBtn.addEventListener('click', async () => {
+        const selected = String(window.getSelection?.().toString() || '');
+        const text = selected || toCopyText();
+        const ok = await copyText(text);
+        copySelectedBtn.textContent = ok ? 'コピー完了' : 'コピー失敗';
+        setTimeout(() => { copySelectedBtn.textContent = '選択コピー'; }, 1000);
+      });
+      followBtn.addEventListener('click', () => {
+        follow = !follow;
+        followBtn.textContent = '追従: ' + (follow ? 'ON' : 'OFF');
+      });
+
+      if (window.logAPI?.getRuntimeLogs) {
+        window.logAPI.getRuntimeLogs().then((res) => {
+          if (res?.ok) resetRows(res.logs || []);
+        }).catch(() => {});
+      }
+      window.logAPI?.onRuntimeLog?.((entry) => appendRow(entry));
+    })();
+  </script>
+</body>
+</html>
+
+

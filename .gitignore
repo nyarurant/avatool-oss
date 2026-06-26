@@ -1,0 +1,23 @@
+node_modules/
+release/
+.data/
+backups/
+tmp/
+coverage/
+
+# Local agent/editor state
+.claude/
+.codex/
+
+# Runtime/debug output
+*.log
+cdp_result*.json
+avatar_analysis_debug_received.txt
+debug_item_json/
+debug_item_json.zip
+*_from_gigafile.json
+gigafile_*.js
+gigafile_*.html
+site_*.html
+codex_*.txt
+claude_*.txt

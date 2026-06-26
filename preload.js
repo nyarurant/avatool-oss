@@ -1,0 +1,220 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+function subscribe(channel, handler) {
+  if (typeof handler !== 'function') return () => {};
+  const wrapped = (_e, payload) => handler(payload);
+  ipcRenderer.on(channel, wrapped);
+  return () => {
+    ipcRenderer.removeListener(channel, wrapped);
+  };
+}
+
+let lastFatalSignature = '';
+let lastFatalAt = 0;
+
+function serializeErrorDetails(value, depth = 0) {
+  if (depth > 2) return '[depth-limited]';
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    };
+  }
+  if (Array.isArray(value)) return value.slice(0, 10).map((entry) => serializeErrorDetails(entry, depth + 1));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value).slice(0, 12)) {
+      out[key] = serializeErrorDetails(entry, depth + 1);
+    }
+    return out;
+  }
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || value == null) return value;
+  return String(value);
+}
+
+function reportRendererFatal(kind, payload = {}) {
+  const now = Date.now();
+  const body = {
+    kind: String(kind || 'unknown'),
+    href: (() => {
+      try { return String(window.location?.href || ''); } catch { return ''; }
+    })(),
+    title: (() => {
+      try { return String(document?.title || ''); } catch { return ''; }
+    })(),
+    timestamp: new Date(now).toISOString(),
+    ...payload,
+  };
+  const signature = JSON.stringify([
+    body.kind,
+    body.message || '',
+    body.filename || '',
+    body.lineno || 0,
+    body.colno || 0,
+  ]);
+  if (signature === lastFatalSignature && (now - lastFatalAt) < 1500) return;
+  lastFatalSignature = signature;
+  lastFatalAt = now;
+  ipcRenderer.send('renderer-fatal-error', body);
+}
+
+window.addEventListener('error', (event) => {
+  const source = String(event?.filename || '');
+  if (!event?.error && source && !source.startsWith('file:')) return;
+  // Skip resource load errors (img/video/audio/link elements)
+  if (!event?.error && !event?.message) return;
+  reportRendererFatal('error', {
+    message: String(event?.message || event?.error?.message || 'Unknown renderer error'),
+    filename: source,
+    lineno: Number(event?.lineno || 0),
+    colno: Number(event?.colno || 0),
+    stack: String(event?.error?.stack || ''),
+  });
+}, true);
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event?.reason;
+  reportRendererFatal('unhandledrejection', {
+    message: String(reason?.message || reason || 'Unhandled promise rejection'),
+    reason: serializeErrorDetails(reason),
+    stack: String(reason?.stack || ''),
+  });
+});
+
+contextBridge.exposeInMainWorld('boothAPI', {
+  loadAssets: () => ipcRenderer.invoke('load-assets'),
+  loadAvatarAliases: () => ipcRenderer.invoke('load-avatar-aliases'),
+  getStorageUsage: () => ipcRenderer.invoke('get-storage-usage'),
+  prepareClient: () => ipcRenderer.invoke('prepare-client'),
+  openItemFolder: (itemId, title) => ipcRenderer.invoke('open-item-folder', itemId, title),
+  listItemFiles: (itemId, title) => ipcRenderer.invoke('list-item-files', itemId, title),
+  openExtractedEntry: (itemId, title, relPath) => ipcRenderer.invoke('open-extracted-entry', itemId, title, relPath),
+  syncLibrary: (options) => ipcRenderer.invoke('sync-library', options),
+  analyzeAvatarCompatibility: (options) => ipcRenderer.invoke('analyze-avatar-compatibility', options),
+  confirmAvatarCompatibility: (itemId, avatarName, options = {}) => ipcRenderer.invoke('confirm-avatar-compatibility', {
+    itemId,
+    avatarName,
+    reset: Boolean(options?.reset),
+  }),
+  enqueueDownloads: (assets) => ipcRenderer.invoke('enqueue-downloads', assets),
+  checkUpdates: () => ipcRenderer.invoke('check-updates'),
+  checkAppUpdate: (manual = true) => ipcRenderer.invoke('check-app-update', { manual }),
+  startAppUpdateDownload: () => ipcRenderer.invoke('start-app-update-download'),
+  installAppUpdateNow: () => ipcRenderer.invoke('install-app-update-now'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
+  getRendererRecoveryState: () => ipcRenderer.invoke('get-renderer-recovery-state'),
+  reopenMainWindow: () => ipcRenderer.invoke('reopen-main-window'),
+  restartApp: () => ipcRenderer.invoke('restart-app'),
+  openRuntimeLogWindow: () => ipcRenderer.invoke('open-runtime-log-window'),
+  markUpdateSeen: (itemId, files, expectedStableHash) => ipcRenderer.invoke('mark-update-seen', itemId, files, expectedStableHash),
+  previewManualFreeAsset: (itemIdOrUrl) => ipcRenderer.invoke('preview-manual-free-asset', { itemIdOrUrl }),
+  addManualFreeAsset: (itemIdOrUrl) => ipcRenderer.invoke('add-manual-free-asset', { itemIdOrUrl }),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
+  runHealthCheck: (trigger = 'manual') => ipcRenderer.invoke('run-health-check', trigger),
+  getOperationLogs: () => ipcRenderer.invoke('get-operation-logs'),
+  clearOperationLogs: () => ipcRenderer.invoke('clear-operation-logs'),
+  getRuntimeLogs: () => ipcRenderer.invoke('get-runtime-logs'),
+  listSettingsProfiles: () => ipcRenderer.invoke('list-settings-profiles'),
+  saveSettingsProfile: (profileName, profilePayload) => ipcRenderer.invoke('save-settings-profile', profileName, profilePayload),
+  applySettingsProfile: (profileName) => ipcRenderer.invoke('apply-settings-profile', profileName),
+  exportAppBundle: (exportPath, notifications = []) => ipcRenderer.invoke('export-app-bundle', { exportPath, notifications }),
+  importAppBundle: (importPath) => ipcRenderer.invoke('import-app-bundle', { importPath }),
+  listAutoBootstrapVariants: () => ipcRenderer.invoke('list-auto-bootstrap-variants'),
+  listAutoBootstrapRuleChoices: () => ipcRenderer.invoke('list-auto-bootstrap-rule-choices'),
+  loadCookieFile: (filePath) => ipcRenderer.invoke('load-cookie-file', filePath),
+  openLoginWindow: () => ipcRenderer.invoke('open-login-window'),
+  logoutSession: () => ipcRenderer.invoke('logout-session'),
+  loadVCCProjects: () => ipcRenderer.invoke('load-vcc-projects'),
+  importToUnity: (projectPath, packagePath, importMode = 'normal', packageMeta = null) => ipcRenderer.invoke('unity-import-package', {
+    projectPath,
+    packagePath,
+    importMode,
+    packageMeta: packageMeta && typeof packageMeta === 'object' ? packageMeta : null,
+  }),
+  prepareUnityProject: (projectPath) => ipcRenderer.invoke('prepare-unity-project', projectPath),
+  importMultipleToUnity: (projectPath, packagePaths, importMode = 'normal') => ipcRenderer.invoke('unity-import-multiple', { projectPath, packagePaths, importMode }),
+  importMultipleToUnityWithMeta: (projectPath, packages, importMode = 'normal') => ipcRenderer.invoke('unity-import-multiple-with-meta', { projectPath, packages, importMode }),
+  openPackagesWithAssociation: (packagePaths, packages = null) => ipcRenderer.invoke('open-packages-with-association', {
+    packagePaths,
+    packages: Array.isArray(packages) ? packages : null,
+  }),
+  getRunningUnityProjects: () => ipcRenderer.invoke('get-running-unity-projects'),
+  scanUnityPackage: (pkgPath, candidateTokens) => ipcRenderer.invoke('scan-unity-package', { pkgPath, candidateTokens }),
+  analyzeImportToolDeps: (projectPath, packages) => ipcRenderer.invoke('analyze-import-tool-deps', { projectPath, packages }),
+  importDryRun: (projectPath, packages = null, packagePaths = null) => ipcRenderer.invoke('unity-import-dry-run', {
+    projectPath,
+    packages: Array.isArray(packages) ? packages : null,
+    packagePaths: Array.isArray(packagePaths) ? packagePaths : null,
+  }),
+  installImportToolDeps: (projectPath, tools) => ipcRenderer.invoke('install-import-tool-deps', { projectPath, tools }),
+  getImportHistory: (itemId) => ipcRenderer.invoke('get-import-history', itemId),
+  getProjectItems: (projectPath) => ipcRenderer.invoke('get-project-items', projectPath),
+  reconcileImports: (projectPath, packages, persistMatched, threshold) => ipcRenderer.invoke('reconcile-imports', { projectPath, packages, persistMatched, threshold }),
+  stopQueue: () => ipcRenderer.invoke('stop-queue'),
+  resumeQueue: () => ipcRenderer.invoke('resume-queue'),
+  retryFailed: () => ipcRenderer.invoke('retry-failed'),
+  extractItem: (itemId, title, force) => ipcRenderer.invoke('extract-item', itemId, title, force),
+
+  onMetaProgress: (handler) => {
+    return subscribe('meta-progress', handler);
+  },
+
+  onDownloadProgress: (handler) => {
+    return subscribe('download-progress', handler);
+  },
+  onUnityImportProgress: (handler) => {
+    return subscribe('unity-import-progress', handler);
+  },
+  onQueueStatus: (handler) => {
+    return subscribe('download-queue', handler);
+  },
+  onUpdateNotification: (handler) => {
+    return subscribe('update-notification', handler);
+  },
+  onAppUpdateStatus: (handler) => {
+    return subscribe('app-update-status', handler);
+  },
+  onVccProjectsUpdated: (handler) => {
+    return subscribe('vcc-projects-updated', handler);
+  },
+  onAssetsRefreshed: (handler) => {
+    return subscribe('assets-refreshed', handler);
+  },
+  onAutoBootstrapStatus: (handler) => {
+    return subscribe('auto-bootstrap-status', handler);
+  },
+  onOperationLog: (handler) => {
+    return subscribe('operation-log', handler);
+  },
+  onHealthCheckReport: (handler) => {
+    return subscribe('health-check-report', handler);
+  },
+  onZipOversizeConfirmRequest: (handler) => {
+    return subscribe('zip-oversize-confirm-request', handler);
+  },
+  respondZipOversizeConfirm: (requestId, allow) => ipcRenderer.invoke('respond-zip-oversize-confirm', {
+    requestId,
+    allow: Boolean(allow),
+  }),
+  onArchivePasswordRequired: (handler) => {
+    return subscribe('archive-password-required', handler);
+  },
+  respondArchivePassword: (requestId, password, cancelled = false) => ipcRenderer.invoke('respond-archive-password', {
+    requestId,
+    password: password || '',
+    cancelled: Boolean(cancelled),
+  }),
+
+  downloadItem: (asset) => ipcRenderer.invoke('download-item', asset),
+  collectUnitypackages: (assets) => ipcRenderer.invoke('collect-unitypackages', assets),
+});
+
+contextBridge.exposeInMainWorld('logger', {
+  log: (msg, data) => ipcRenderer.send('renderer-log', { level: 'log', msg, data }),
+  warn: (msg, data) => ipcRenderer.send('renderer-log', { level: 'warn', msg, data }),
+  error: (msg, data) => ipcRenderer.send('renderer-log', { level: 'error', msg, data }),
+});

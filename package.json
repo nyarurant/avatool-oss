@@ -1,0 +1,137 @@
+{
+  "name": "avatool",
+  "version": "1.0.410",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/styles/tailwind.input.css -o ./assets/styles/tailwind.generated.css --minify",
+    "start": "electron .",
+    "start:debug-d": "node scripts/debug-data-reset.js && electron .",
+    "start:debug-d:keep-cookie": "node scripts/debug-data-reset.js --keep-cookie && electron .",
+    "start:rebuild": "npm run build:css && electron .",
+    "debug-d": "node scripts/debug-data-reset.js",
+    "debug-d:keep-cookie": "node scripts/debug-data-reset.js --keep-cookie",
+    "debug:unity": "node scripts/debug-import.js",
+    "pack": "electron-builder --dir",
+    "dist:win": "electron-builder --win nsis",
+    "release:upload": "node scripts/build-and-upload-avatool.js",
+    "release:upload:no-build": "node scripts/build-and-upload-avatool.js --no-build",
+    "test": "node scripts/smoke_test.js",
+    "test:ui-probe": "node scripts/ui_probe.js",
+    "test:unit": "jest",
+    "test:unit:watch": "jest --watch",
+    "test:unit:coverage": "jest --coverage"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "lib/utils.js",
+      "lib/vpm_manager.js",
+      "lib/settings_manager.js"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.8.1",
+    "express": "^5.2.1",
+    "form-data": "^4.0.4",
+    "jest": "^30.2.0",
+    "node-osc": "^11.2.2",
+    "tailwindcss": "^3.4.17"
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "axios": "^1.13.5",
+    "cheerio": "^1.1.2",
+    "electron-updater": "^6.3.9",
+    "iconv-lite": "^0.7.1",
+    "yauzl": "^3.2.0"
+  },
+  "build": {
+    "appId": "xyz.necco.avatool",
+    "productName": "Avatool",
+    "files": [
+      "**/*",
+      "!release/**",
+      "!.claude/**",
+      "!.data/**",
+      "!tmp/**",
+      "!backups/**",
+      "!AGENTS.md",
+      "!PatchNote/**",
+      "!DevNote/**",
+      "!node_modules/**/.cache/**",
+      "!scripts/*.js",
+      "!__tests__/**",
+      "!README.md",
+      "!tailwind.config.js",
+      "!assets/styles/tailwind.input.css",
+      "!package-lock.json",
+      "!.gitignore",
+      "!a.js",
+      "!chat-history.json",
+      "!codex_*.txt",
+      "!claude_*.txt",
+      "!avatar_analysis_debug_received.txt",
+      "!debug_item_json/**",
+      "!debug_item_json.zip",
+      "!*_from_gigafile.json",
+      "!gigafile_*.js",
+      "!gigafile_*.html",
+      "!site_*.html",
+      "!node_modules/7zip-bin/linux/**",
+      "!node_modules/7zip-bin/mac/**",
+      "!node_modules/7zip-bin/win/ia32/**",
+      "!node_modules/7zip-bin/win/arm64/**",
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.md",
+      "!node_modules/**/README*",
+      "!node_modules/**/CHANGELOG*",
+      "!node_modules/**/CONTRIBUTING*",
+      "!node_modules/**/LICENSE*",
+      "!node_modules/**/test/**",
+      "!node_modules/**/tests/**",
+      "!node_modules/**/__tests__/**",
+      "!node_modules/**/spec/**",
+      "!node_modules/**/benchmark/**",
+      "!node_modules/**/example/**",
+      "!node_modules/**/examples/**",
+      "!node_modules/axios/dist/browser/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
+    "win": {
+      "icon": "assets/icons/icons/icon.ico",
+      "signAndEditExecutable": true,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "installerIcon": "assets/icons/icons/icon.ico",
+      "uninstallerIcon": "assets/icons/icons/icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.necco.xyz/file/avatool/"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron@38.2.0": true,
+    "electron-winstaller@5.4.0": true,
+    "unrs-resolver@1.11.1": true
+  }
+}

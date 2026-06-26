@@ -1,0 +1,1174 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: file:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+  >
+  <title>Avatool</title>
+  <link rel="stylesheet" href="./assets/styles/tailwind.generated.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0a0a0c;
+      --bg-panel: #111114;
+      --bg-hover: #1c1c21;
+      --border-subtle: rgba(255,255,255,0.05);
+      --border-active: rgba(255,255,255,0.12);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59,130,246,0.3);
+      --text-main: #f4f4f5;
+      --text-dim: #a1a1aa;
+      --text-mute: #52525b;
+      
+      /* New CSS Variables from user's provided HTML */
+      --bg: #000000;
+      --surface: #09090b;
+      --border: #27272a;
+      --border-bright: #3f3f46;
+      --text: #ffffff;
+      --text-muted: #71717a;
+      /* --accent: #3b82f6; // Already exists, might need to choose one or define a new one if it means something different */
+    }
+
+    body {
+      background: var(--bg-main); /* Keep existing as it might be specific to app-container */
+      color: var(--text-main); /* Keep existing */
+      font-family: 'Inter','Noto Sans JP',sans-serif; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; overflow: hidden; color-scheme: dark;
+      
+      /* Overwrite / Add from user's provided HTML */
+      background-color: var(--bg); /* This will override --bg-main if app-container doesn't override body's bg */
+      color: var(--text); /* This will override --text-main */
+      font-family: 'Inter', 'Noto Sans JP', sans-serif; /* Keep existing, as it's the same */
+      -webkit-font-smoothing: antialiased;
+      margin: 0;
+    }
+    
+    /* Keep existing custom classes */
+    .font-mono-custom { font-family: 'JetBrains Mono', monospace; }
+    .app-container { display: grid; grid-template-rows: 64px 1fr auto 32px; height: 100vh; }
+    .glass-sidebar { background: rgba(14,14,17,0.8); backdrop-filter: blur(20px); }
+    .asset-tile { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; transition: all .3s cubic-bezier(.2,1,.2,1); position: relative; }
+    .asset-tile:hover { border-color: var(--border-active); transform: translateY(-4px); box-shadow: 0 10px 30px -5px rgba(0,0,0,.5); }
+    .btn-action { background: #202023; border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 11px; font-weight: 500; padding: 8px 16px; line-height: 1.2; border-radius: 8px; transition: all .2s; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; writing-mode: horizontal-tb; }
+    .btn-action:hover { background: #2d2d31; border-color: var(--border-active); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+    .btn-primary:hover { background: #2563eb; box-shadow: 0 0 15px var(--accent-glow); }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; color: var(--text-dim); font-size: 12px; transition: all .2s; cursor: pointer; }
+    .nav-item:hover { background: rgba(255,255,255,.03); color: var(--text-main); }
+    .nav-item.active { background: rgba(59,130,246,.08); color: var(--accent); font-weight: 600; }
+    .filter-btn { color: #71717a; background: transparent; font-weight: 500; }
+    .filter-btn.active { color: #60a5fa; background: rgba(59,130,246,.10); font-weight: 700; }
+    .sidebar-label { text-transform: uppercase; font-size: 9px; font-weight: 700; color: var(--text-mute); letter-spacing: .1em; margin-bottom: 8px; padding-left: 14px; }
+    .detail-panel { width: 0; transition: width .3s cubic-bezier(.2,1,.2,1); overflow: hidden; border-left: 1px solid var(--border-subtle); background: #0e0e11; }
+    .detail-panel.open { width: 360px; }
+    .status-bar { height: 32px; background: #0a0a0c; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; padding: 0 16px; font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+    .icon-btn { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border-subtle); color: var(--text-dim); transition: all .2s; }
+    .icon-btn:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--border-active); }
+    select {
+      background-color: #111318;
+      color: #e4e4e7;
+      border-color: rgba(255,255,255,.10);
+    }
+    select option {
+      background-color: #0f1116;
+      color: #e4e4e7;
+    }
+    select:focus {
+      outline: none;
+      border-color: rgba(59,130,246,.55);
+      box-shadow: 0 0 0 2px rgba(59,130,246,.15);
+    }
+    .panel-input { width: 100%; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.10); border-radius: 10px; padding: 10px 12px; font-size: 12px; color: #e4e4e7; transition: border-color 0.15s, box-shadow 0.15s; }
+    .panel-input:focus { outline: none; border-color: rgba(59,130,246,.55); box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+    .panel-label { font-size: 10px; color: #71717a; margin-bottom: 8px; display: block; letter-spacing: .02em; text-transform: uppercase; }
+    .modal-card { background: linear-gradient(180deg, #141519 0%, #0e0f14 100%); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; box-shadow: 0 32px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06); }
+    .queue-pill { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #d4d4d8; }
+    .status-mini-btn { font-size: 10px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.10); color: #a1a1aa; background: transparent; transition: all .2s; }
+    .status-mini-btn:hover { color: #e4e4e7; border-color: rgba(255,255,255,.20); background: rgba(255,255,255,.04); }
+    .settings-section { border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.02); padding: 12px; }
+    .settings-section-title { font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
+    #setting-shortcuts-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+    .shortcut-row { display: grid; grid-template-columns: 1fr 108px 72px; gap: 6px; align-items: center; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: #2d2d31; border-radius: 10px; }
+    .icon-tile { display: flex; flex-direction: column; align-items: stretch; padding: 6px 6px 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.018); cursor: pointer; transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
+    .icon-tile:hover { background: rgba(255,255,255,0.055); border-color: rgba(255,255,255,0.14); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
+    .icon-tile.selected { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.4); box-shadow: 0 0 0 1px rgba(59,130,246,0.18); }
+    .tree-item { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-size: 11px; color: #71717a; transition: background 0.12s, color 0.12s; }
+    .tree-item:hover { background: rgba(255,255,255,0.05); color: #d4d4d8; }
+    .tree-item.bg-white\/5 { background: rgba(255,255,255,0.06); color: #e4e4e7; font-weight: 500; }
+
+    /* New CSS from user's provided HTML */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #27272a;
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px; width: 14px;
+      left: 2px; bottom: 2px;
+      background-color: white;
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(14px); }
+
+    .app-window {
+      width: 100%;
+      max-width: 800px;
+      height: 600px;
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .header-bar {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px;
+    }
+
+    .footer-bar {
+      padding: 16px 32px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: rgba(9, 9, 11, 0.5);
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 15px 0;
+    }
+
+    .rule-item {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    /* Import Rule Card */
+    .rule-card { border: 1px solid rgba(255,255,255,.08); border-radius: 8px; overflow: visible; background: rgba(0,0,0,.2); }
+    .rule-card-header { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto 28px; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.06); }
+    .rule-condition-label { font-size: 11px; color: #71717a; white-space: nowrap; }
+    .rule-pattern-input { width: 100%; min-width: 0; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 7px 9px; font-size: 12px; color: #e4e4e7; transition: border-color 0.12s, box-shadow 0.12s; }
+    .rule-pattern-input:focus { outline: none; border-color: rgba(59,130,246,.55); }
+    .rule-remove-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; color: #f87171; border: 1px solid rgba(248,113,113,.20); background: rgba(239,68,68,.08); transition: color 0.12s, background 0.12s, border-color 0.12s; flex-shrink: 0; }
+    .rule-remove-btn:hover { color: #fecaca; background: rgba(239,68,68,.15); border-color: rgba(248,113,113,.36); }
+    .rule-card-body { padding: 14px 16px; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(180px, .9fr); gap: 14px; }
+    .rule-card-detail { grid-column: 1 / -1; padding: 9px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.06); background: rgba(255,255,255,.025); }
+    /* Item picker */
+    .rule-picker { position: relative; }
+    .rule-picker-btn { display: flex; align-items: center; gap: 10px; width: 100%; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.10); border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; transition: border-color 0.12s; }
+    .rule-picker-btn:hover { border-color: rgba(255,255,255,.2); }
+    .rule-picker-thumb { width: 40px; height: 40px; border-radius: 6px; overflow: hidden; background: rgba(0,0,0,.34); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #52525b; }
+    .rule-picker-thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .rule-picker-text { flex: 1; font-size: 12px; color: #e4e4e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rule-selected-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .rule-selected-chip { max-width: 100%; display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.035); color: #d4d4d8; font-size: 10px; }
+    .rule-selected-chip img { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; background: rgba(0,0,0,.35); }
+    .rule-file-overrides { display: flex; flex-direction: column; gap: 8px; }
+    .rule-file-override-row { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1fr); gap: 8px; align-items: center; }
+    .rule-file-override-name { min-width: 0; font-size: 10px; color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rule-item-opt { min-width: 0; display: flex; flex-direction: column; gap: 7px; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.025); cursor: pointer; text-align: left; font: inherit; transition: background 0.12s, border-color 0.12s, transform 0.12s; }
+    .rule-item-opt:hover { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); transform: translateY(-1px); }
+    .rule-item-opt.selected { background: rgba(59,130,246,.13); border-color: rgba(59,130,246,.36); }
+    .rule-item-opt-thumb { width: 100%; aspect-ratio: 1 / 1; border-radius: 7px; overflow: hidden; background: rgba(0,0,0,.34); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #52525b; }
+    .rule-item-opt-thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .rule-item-opt-name { min-height: 30px; font-size: 11px; line-height: 1.35; color: #d4d4d8; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .rule-picker-empty { grid-column: 1 / -1; padding: 12px; font-size: 11px; color: #71717a; text-align: center; }
+    .rule-item-picker-modal { position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.72); padding: 24px; align-items: center; justify-content: center; }
+    .rule-item-picker-shell { width: min(720px, calc(100vw - 48px)); max-height: min(720px, calc(100vh - 48px)); display: flex; flex-direction: column; overflow: hidden; }
+    .rule-item-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,.10); }
+    .rule-item-picker-tools { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.018); }
+    .rule-item-picker-grid { padding: 16px; overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    .rule-item-picker-grid .rule-item-opt { min-height: 0; height: 132px; }
+    .rule-item-picker-grid .rule-item-opt-thumb { height: 82px; aspect-ratio: auto; }
+    .rule-item-picker-grid .rule-item-opt-name { min-height: 32px; }
+    .rule-item-picker-footer { padding: 14px 16px; border-top: 1px solid rgba(255,255,255,.10); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .auto-bootstrap-shell { width: 100%; max-width: 780px; height: min(760px, calc(100vh - 4rem)); }
+    .auto-bootstrap-content { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 28px; }
+    .auto-bootstrap-section { border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.018); overflow: visible; }
+    .auto-bootstrap-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.025); }
+    .auto-bootstrap-section-body { padding: 0 16px; }
+    .auto-bootstrap-section-body.spaced { padding: 0 16px 16px; }
+    .auto-bootstrap-section-body.padded { padding: 16px; }
+    .auto-bootstrap-warning { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 12px; border-radius: 8px; background: rgba(120,53,15,.32); border: 1px solid rgba(180,83,9,.34); }
+    .auto-bootstrap-footer { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,.10); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+    .input-base {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: white;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      transition: border-color 0.15s;
+    }
+    .input-base:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .label-mini {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: white; color: black; }
+    .btn-secondary { background: #18181b; border: 1px solid var(--border); color: white; }
+    .btn-ghost { color: var(--text-muted); padding: 8px; }
+    .btn-ghost:hover { color: white; background: rgba(255,255,255,0.05); }
+
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 10px; }
+
+    /* Settings tab UI */
+    .settings-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #71717a;
+      border-radius: 6px;
+      position: relative;
+      transition: color 0.12s, background 0.12s, border-color 0.12s;
+      background: transparent;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .settings-tab:hover { color: #d4d4d8; background: rgba(255,255,255,.06); }
+    .settings-tab.active { color: #e4e4e7; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.22); }
+    .settings-tab.active::before { content: ""; position: absolute; left: 5px; top: 7px; bottom: 7px; width: 2px; border-radius: 999px; background: #60a5fa; }
+    .settings-panel { display: block; }
+    .settings-panel.hidden { display: none; }
+    .settings-modal-shell { width: 100%; max-width: 900px; height: min(720px, calc(100vh - 4rem)); }
+    .settings-sidebar { width: 176px; flex-shrink: 0; background: rgba(0,0,0,.25); }
+    .settings-content { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 28px; }
+    .settings-panel-header { margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .settings-control-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .settings-action-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+    .settings-two-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .settings-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .settings-status-line { min-height: 20px; display: flex; align-items: center; min-width: 0; color: #71717a; font-size: 10px; }
+    .settings-project-list { min-height: 72px; max-height: 220px; overflow-y: auto; border: 1px solid rgba(255,255,255,.10); border-radius: 8px; padding: 10px; background: rgba(0,0,0,.18); }
+    .settings-remove-btn { width: 24px; height: 24px; flex: 0 0 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: #f87171; border: 1px solid transparent; background: transparent; font-size: 14px; line-height: 1; transition: color .12s, background .12s, border-color .12s; }
+    .settings-remove-btn:hover { color: #fecaca; background: rgba(239,68,68,.12); border-color: rgba(248,113,113,.25); }
+    .settings-footer { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,.10); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    @media (max-width: 760px) {
+      #settings-modal { padding: 16px; }
+      .settings-modal-shell { height: calc(100vh - 2rem); }
+      .settings-sidebar { width: 148px; }
+      .settings-content { padding: 20px; }
+      .settings-control-grid,
+      .settings-action-grid,
+      .settings-two-grid,
+      #setting-shortcuts-editor { grid-template-columns: 1fr; }
+      .shortcut-row { grid-template-columns: minmax(0, 1fr) 104px 72px; }
+      .auto-bootstrap-shell { height: calc(100vh - 2rem); }
+      .auto-bootstrap-content { padding: 18px; }
+      .rule-card-header { grid-template-columns: 1fr 28px; }
+      .rule-condition-label { grid-column: 1 / -1; }
+      .rule-pattern-input { grid-column: 1 / 2; }
+      .rule-remove-btn { grid-column: 2 / 3; grid-row: 2 / 3; }
+      .rule-card-body { grid-template-columns: 1fr; }
+      .rule-file-override-row { grid-template-columns: 1fr; }
+      .rule-item-picker-modal { padding: 16px; }
+      .rule-item-picker-shell { width: calc(100vw - 32px); max-height: calc(100vh - 32px); }
+      .rule-item-picker-tools { grid-template-columns: 1fr; }
+      .rule-item-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .rule-item-picker-grid .rule-item-opt { height: 124px; }
+      .rule-item-picker-grid .rule-item-opt-thumb { height: 76px; }
+    }
+    .import-phase-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; animation: import-dot-pulse 1.2s ease-in-out infinite; }
+    @keyframes import-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  </style>
+</head>
+<body class="app-container">
+  <header class="bg-[#0a0a0c] border-b border-white/5 px-6 flex items-center justify-between z-50">
+    <div class="flex items-center gap-12">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/20">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 8V21H3V8M23 3H1V8H23V3Z"/></svg>
+        </div>
+        <h1 class="text-[12px] font-black tracking-[0.2em] uppercase text-white">Ava<span class="text-blue-500">tool</span></h1>
+      </div>
+      <nav class="flex items-center gap-1">
+        <button class="filter-btn active px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5" data-filter="all">すべて</button>
+        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="updated">更新あり</button>
+      </nav>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 border-r border-white/10 pr-4 mr-1">
+        <button id="shortcuts-guide-btn" class="icon-btn" title="ショートカットガイド">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.1 9a3 3 0 1 1 5.8 1c-.2.8-.8 1.4-1.5 1.9-.7.5-1.4 1-1.4 2.1"/>
+            <circle cx="12" cy="17" r="1"/>
+          </svg>
+        </button>
+        <button id="check-updates-btn" class="icon-btn !border-amber-500/30 !text-amber-400 hover:!bg-amber-500/10" title="更新アクション（確認 / 同期 / 両方）">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        </button>
+        <button id="download-all-btn" class="icon-btn" title="すべてダウンロード">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button id="auto-update-notify-btn" class="icon-btn relative !border-amber-500/30 text-amber-500/80" title="通知">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="auto-update-notify-count" class="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-[#0a0a0c] hidden"></span>
+        </button>
+        <button id="settings-btn" class="icon-btn" title="環境設定">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="manual-add-btn" class="btn-action btn-primary !px-4 !py-2 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]" title="無料アセットを手動で追加">
+          <span class="font-mono-custom text-[13px] leading-none">+</span>
+          <span>無料アセット追加</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex overflow-hidden">
+    <aside class="w-64 glass-sidebar border-r border-white/5 p-4 flex flex-col overflow-y-auto">
+      <div class="flex-1 space-y-8">
+        <section>
+          <div class="flex items-center justify-between mb-2 pr-2">
+            <p class="sidebar-label !mb-0">Library</p>
+            <button id="sync-library-btn" class="p-1 hover:bg-white/5 rounded text-zinc-500 hover:text-blue-400 transition-colors" title="購入履歴を同期">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            </button>
+          </div>
+          <div id="category-list" class="space-y-1"></div>
+        </section>
+        <section>
+          <p class="sidebar-label">Tools</p>
+          <div class="space-y-1">
+            <button id="project-items-btn" class="nav-item w-full"><span>プロジェクト内検索</span></button>
+            <button id="auto-bootstrap-btn" class="nav-item w-full"><span>自動インポート設定</span></button>
+            <button id="analyze-avatar-compat-btn" class="nav-item w-full flex items-center">
+              <span>衣装解析</span>
+              <span id="analyze-avatar-compat-badge"
+                    class="hidden ml-auto text-[9px] bg-amber-500/20 text-amber-400
+                           px-1.5 py-0.5 rounded-full font-mono-custom leading-none"></span>
+            </button>
+          </div>
+        </section>
+      </div>
+      <div class="mt-auto pt-6 border-t border-white/5">
+        <div class="p-3 bg-white/[0.02] border border-white/5 rounded-xl mb-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Storage</span>
+            <span id="storage-usage-text" class="text-[10px] text-zinc-300 font-mono-custom">-</span>
+          </div>
+          <div class="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+            <div id="storage-other-bar" class="h-full bg-zinc-600" style="width: 0%;"></div>
+            <div id="storage-app-bar" class="h-full bg-sky-500 relative" style="width: 0%;left:0;"></div>
+          </div>
+          <div id="storage-breakdown" class="text-[9px] text-zinc-500 mt-2">-</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="flex-1 flex flex-col min-w-0 bg-[#08080a]">
+      <div class="px-8 py-5 flex items-center justify-between">
+        <div class="relative w-full max-w-md">
+          <input type="text" id="search-input" placeholder="アセットを検索..." class="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-sm focus:border-blue-500/50 outline-none transition-all">
+        </div>
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">並び替え</span>
+            <select id="sort-select" class="bg-transparent text-[11px] text-zinc-300 outline-none cursor-pointer font-bold">
+              <option value="date_desc">追加日順</option>
+              <option value="name_asc">名前順</option>
+              <option value="size_desc">サイズ順</option>
+            </select>
+          </div>
+          <div class="flex bg-black/20 p-1 rounded-lg border border-white/5">
+            <button id="view-grid-btn" class="w-8 h-8 flex items-center justify-center rounded-md bg-white/5 text-blue-500">G</button>
+            <button id="view-list-btn" class="w-8 h-8 flex items-center justify-center rounded-md text-zinc-600 hover:text-zinc-400">L</button>
+          </div>
+          <span id="import-mode-indicator" class="text-[10px] text-zinc-400 font-mono-custom inline-flex items-center gap-1.5 select-none whitespace-nowrap shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+            <span>通常モード</span>
+          </span>
+          <button id="btn-toggle-select" class="btn-action whitespace-nowrap shrink-0 !bg-blue-600/10 !text-blue-400 !border-blue-500/20 hover:!bg-blue-600/20">一括操作</button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-8 pt-2">
+        <div id="meta-progress-wrapper" class="hidden mb-6 p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl">
+          <div class="flex justify-between items-center text-[10px] mb-2">
+            <span id="meta-progress-label" class="text-blue-400 font-bold">Synchronizing...</span>
+            <span id="meta-progress-percent" class="font-mono-custom text-blue-300">0%</span>
+          </div>
+          <div class="h-1 w-full bg-blue-900/20 rounded-full overflow-hidden">
+            <div id="meta-progress-bar-top" class="h-full bg-blue-500 transition-all duration-300" style="width:0%;"></div>
+          </div>
+          <div id="meta-progress-count-label" class="text-[9px] text-zinc-400 mt-2"></div>
+          <div id="meta-progress-bar-bottom" class="hidden"></div>
+        </div>
+        <div id="asset-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6"></div>
+      </div>
+    </section>
+    <aside id="detail-panel" class="detail-panel"></aside>
+  </main>
+
+  <footer class="status-bar relative flex items-center justify-between border-t border-white/5">
+    <div class="flex items-center gap-4 min-w-0">
+      <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div><span class="text-zinc-400">接続中</span></div>
+      <span class="queue-pill" id="queue-state">待機</span>
+      <span class="text-zinc-500">実行 <span id="queue-running" class="text-zinc-300 font-mono-custom">-</span></span>
+      <span class="text-zinc-500">失敗 <span id="queue-failed" class="text-rose-300 font-mono-custom">0</span></span>
+      <span class="text-zinc-600">キュー <span id="queue-queued" class="text-zinc-400 font-mono-custom">0</span></span>
+      <span class="text-zinc-600">完了 <span id="queue-done" class="text-zinc-400 font-mono-custom">0</span></span>
+      <span id="queue-status-text" class="text-zinc-600 truncate max-w-[420px]"></span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="queue-toggle-btn" class="status-mini-btn">キュー停止</button>
+      <button id="retry-failed-btn" class="status-mini-btn">再試行</button>
+      <button id="extract-repair-btn" class="status-mini-btn">展開修復</button>
+      <details id="operation-log-panel" class="group">
+        <summary class="list-none status-mini-btn cursor-pointer select-none">Logs</summary>
+        <div class="absolute right-4 bottom-9 w-[520px] max-w-[70vw] rounded-xl border border-white/10 bg-[#0c0d11]/95 backdrop-blur p-3 shadow-2xl z-[70]">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-[10px] text-zinc-400 uppercase tracking-wider">操作ログ</div>
+            <button id="operation-log-clear-btn" class="status-mini-btn">クリア</button>
+          </div>
+          <div id="operation-log-list" class="max-h-36 overflow-y-auto text-[10px] text-zinc-400 space-y-1"></div>
+        </div>
+      </details>
+      <div class="text-[9px] text-zinc-700 font-mono-custom uppercase tracking-widest ml-1">Avatool Build</div>
+    </div>
+    <div id="queue-failed-details" class="hidden absolute right-4 bottom-11 w-[520px] max-w-[70vw] rounded-xl border border-red-900/60 bg-[#160b0b]/95 backdrop-blur p-3 shadow-2xl z-[69]">
+      <div id="queue-failed-list" class="space-y-1 text-[10px]"></div>
+    </div>
+  </footer>
+
+  <div id="selection-bar" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-4 flex items-center gap-8 whitespace-nowrap shadow-2xl transition-all duration-300 translate-y-20 opacity-0 pointer-events-none">
+    <span class="text-xs font-bold text-white"><span id="selected-count" class="text-blue-400">0</span> アセットを選択中</span>
+    <div class="flex gap-2">
+      <button id="btn-batch-import" class="btn-action btn-primary whitespace-nowrap !rounded-xl">一括インポート</button>
+      <button id="btn-cancel-select" class="btn-action !bg-transparent !border-transparent hover:!text-white">キャンセル</button>
+    </div>
+  </div>
+
+  <div class="hidden">
+    <div id="asset-loading-text"></div>
+    <span id="meta-last-updated"></span>
+    <span id="update-badge" class="hidden"></span>
+    <div id="category-filter"></div>
+    <select id="category-filter-select"><option value="__ALL__">全カテゴリ</option></select>
+    <label><input id="auto-sync-toggle" type="checkbox">auto-sync</label>
+    <button id="refresh-meta"></button>
+    <div id="batch-controls"></div>
+    <button id="download-undownloaded-btn"></button>
+  </div>
+
+  <div id="preview-overlay" class="hidden fixed inset-0 z-[90] bg-black/85 p-5">
+    <div class="w-full h-full rounded-2xl border border-white/10 flex flex-col overflow-hidden" style="background:#06070a;box-shadow:0 32px 80px rgba(0,0,0,.85)">
+
+      <!-- ヘッダー -->
+      <div class="flex items-center gap-2 px-4 h-11 border-b border-white/8 shrink-0" style="background:#040407">
+        <button id="modal-back" class="btn-action !px-2.5 !py-1.5 gap-1.5 disabled:opacity-30">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          戻る
+        </button>
+        <div class="flex-1 min-w-0 flex items-center gap-1.5 px-1">
+          <span id="modal-title" class="text-[12px] font-semibold text-zinc-200 truncate"></span>
+          <span class="text-zinc-700 text-[11px] shrink-0">/</span>
+          <span id="modal-path" class="text-[10px] text-zinc-600 truncate"></span>
+        </div>
+        <div id="modal-review-controls" class="hidden flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/8 px-2 py-1 text-[10px] text-amber-100 shrink-0">
+          <button id="modal-review-prev" type="button" class="w-6 h-6 rounded-md border border-white/10 bg-black/20 text-amber-100 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed" title="前の確認待ち">‹</button>
+          <span id="modal-review-label" class="min-w-10 text-center font-bold tabular-nums">-</span>
+          <button id="modal-review-next" type="button" class="w-6 h-6 rounded-md border border-white/10 bg-black/20 text-amber-100 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed" title="次の確認待ち">›</button>
+        </div>
+        <button id="modal-open-folder" class="btn-action !px-2.5 !py-1.5 gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          フォルダを開く
+        </button>
+        <button id="modal-open-entry" class="btn-action !px-2.5 !py-1.5 gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          選択を開く
+        </button>
+        <div class="w-px h-5 bg-white/10 mx-1 shrink-0"></div>
+        <button id="modal-close" class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- コンテンツ -->
+      <div class="flex flex-1 min-h-0 overflow-hidden">
+
+        <!-- サイドバー（ツリー） -->
+        <div class="w-44 border-r border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
+          <div class="px-3 pt-3 pb-1 text-[9px] font-bold tracking-[0.12em] text-zinc-600 uppercase shrink-0">フォルダ</div>
+          <div id="modal-tree" class="flex-1 overflow-y-auto px-1.5 pb-2"></div>
+          <div class="px-3 py-2 border-t border-white/5 shrink-0">
+            <div id="current-folder-label" class="text-[9px] text-zinc-600 truncate"></div>
+          </div>
+        </div>
+
+        <!-- ファイルグリッド -->
+        <div class="flex-1 min-w-0 overflow-y-auto p-4">
+          <div id="modal-file-grid" class="grid grid-cols-3 xl:grid-cols-4 gap-3"></div>
+        </div>
+
+        <!-- インスペクター -->
+        <div class="w-64 border-l border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
+          <div id="modal-preview-box" class="shrink-0 h-52 flex items-center justify-center overflow-hidden border-b border-white/8" style="background:#020204"></div>
+          <div class="px-4 py-3 border-b border-white/6 shrink-0">
+            <div id="modal-preview-filename" class="text-[12px] font-semibold text-zinc-100 truncate" title=""></div>
+            <div id="modal-preview-info" class="text-[10px] text-zinc-500 mt-0.5 truncate"></div>
+          </div>
+          <div id="modal-file-actions" class="px-4 py-2 border-b border-white/5 shrink-0 empty:hidden"></div>
+          <div class="flex-1 overflow-y-auto px-4 py-3">
+            <div id="asset-avatar-analysis" class="mb-3 text-[10px] text-zinc-500"></div>
+            <div id="asset-import-history" class="text-[10px] text-zinc-500 space-y-1"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- アーカイブ パスワード入力モーダル -->
+  <div id="archive-password-modal" class="hidden fixed inset-0 z-[130] bg-black/80 flex items-center justify-center p-4">
+    <div class="w-full max-w-sm modal-card p-5 space-y-4">
+      <div class="text-[13px] font-bold text-zinc-100">パスワードで保護されたファイル</div>
+      <div id="archive-password-filename" class="text-[10px] text-zinc-500 truncate"></div>
+      <input id="archive-password-input" type="password" placeholder="パスワードを入力..."
+        class="panel-input text-sm" autocomplete="off">
+      <div class="flex gap-2 justify-end">
+        <button id="archive-password-cancel" class="btn-action">キャンセル</button>
+        <button id="archive-password-submit" class="btn-action btn-primary">展開する</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="import-modal" class="hidden fixed inset-0 z-[91] bg-black/80 p-4 items-center justify-center">
+    <div class="w-full max-w-3xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
+      <div class="mb-3">
+        <div class="text-sm font-bold">バックグラウンドインポート</div>
+        <div id="import-package-path" class="text-[10px] text-zinc-500 mt-1"></div>
+      </div>
+      <div class="overflow-y-auto pr-1 flex-1">
+        <div class="text-[9px] text-zinc-600 font-bold mb-1.5" style="text-transform:uppercase;letter-spacing:0.08em;">インポート先プロジェクト</div>
+        <div id="import-project-list" class="space-y-1 mb-3 max-h-48 overflow-y-auto"></div>
+        <div id="import-preset-panel" class="mb-3 p-2 rounded border border-white/10 bg-white/[0.03]">
+          <div class="text-[10px] text-zinc-400 mb-1">プロジェクト別プリセット</div>
+          <label class="flex items-center gap-2 text-[11px] text-zinc-300 mb-1">
+            <input type="checkbox" id="import-preset-auto-dry-run">
+            実行前にドライランを自動実行
+          </label>
+          <label class="flex items-center gap-2 text-[11px] text-zinc-300">
+            <input type="checkbox" id="import-preset-auto-install-deps">
+            依存不足を自動導入（導入可能なもののみ）
+          </label>
+        </div>
+        <div id="import-phase-indicator" class="hidden flex items-center gap-2 mb-2 p-2 rounded" style="border:1px solid rgba(59,130,246,0.15);background:rgba(59,130,246,0.05);">
+          <span id="import-phase-dot" class="import-phase-dot" style="background:#3b82f6;"></span>
+          <span id="import-phase-text" class="text-[11px] text-zinc-300">準備中...</span>
+        </div>
+        <div id="import-status-box" class="hidden text-[10px] text-zinc-400 mb-3"></div>
+        <div id="import-progress-wrap" class="hidden mb-3">
+          <div class="w-full rounded-full overflow-hidden" style="height:6px;background:rgba(0,0,0,0.5);">
+            <div id="import-progress-bar" class="h-full bg-blue-500 transition-all duration-300 rounded-full" style="width:0%"></div>
+          </div>
+          <div id="import-progress-text" class="text-[10px] text-zinc-400 mt-1">0%</div>
+        </div>
+      </div>
+      <div class="flex gap-2 items-center" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.05);">
+        <button id="import-dry-run" class="btn-action">ドライラン</button>
+        <span id="import-busy-indicator" class="hidden text-[10px] flex items-center gap-1.5" style="color:#71717a;">
+          <span class="import-phase-dot shrink-0" style="background:#3b82f6;"></span>処理中...
+        </span>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button id="import-close" class="btn-action">閉じる</button>
+          <button id="import-execute" class="btn-action btn-primary">インポート開始</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="pkg-select-modal" class="hidden fixed inset-0 z-[92] bg-black/80 p-4 items-center justify-center">
+    <div class="w-full max-w-2xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
+      <div class="text-sm font-bold mb-3">パッケージを選択</div>
+      <div id="pkg-select-list" class="space-y-1 mb-3 max-h-64 overflow-y-auto pr-1"></div>
+      <div class="text-[10px] text-zinc-500 mb-1.5">インポートモード</div>
+      <div class="flex gap-2 mb-3">
+        <label id="pkg-mode-normal-btn" class="flex-1 flex flex-col gap-0.5 p-2 rounded-lg border cursor-pointer" style="border-color:rgba(59,130,246,0.4);background:rgba(59,130,246,0.08);">
+          <input type="radio" name="pkg-mode" id="pkg-select-mode-normal" class="hidden" checked>
+          <span data-mode-title class="text-[11px] font-semibold" style="color:#93c5fd;">ライブ</span>
+          <span class="text-[9px] text-zinc-500">Unity起動中に直接インポート</span>
+        </label>
+        <label id="pkg-mode-bg-btn" class="flex-1 flex flex-col gap-0.5 p-2 rounded-lg border cursor-pointer" style="border-color:rgba(255,255,255,0.1);background:transparent;">
+          <input type="radio" name="pkg-mode" id="pkg-select-mode-background" class="hidden">
+          <span data-mode-title class="text-[11px] font-semibold" style="color:#71717a;">バックグラウンド</span>
+          <span class="text-[9px] text-zinc-600">Unity未起動でも実行可能</span>
+        </label>
+      </div>
+      <div class="flex gap-2">
+        <button id="pkg-select-confirm" class="btn-action btn-primary">ライブインポートを開始</button>
+        <button id="pkg-select-cancel" class="btn-action">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="manual-add-modal" class="hidden fixed inset-0 z-[93] bg-black/80 p-4 items-center justify-center">
+    <div class="w-full max-w-xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
+      <div class="text-sm font-bold mb-3">無料アセット追加</div>
+      <div class="overflow-y-auto pr-1">
+        <input id="manual-add-input" type="text" class="panel-input mb-2" placeholder="URLまたはID">
+        <div id="manual-add-status" class="text-[10px] text-zinc-400 mb-2"></div>
+        <button id="manual-add-preview" class="btn-action mb-3">確認</button>
+        <div id="manual-add-preview-box" class="hidden border border-white/10 rounded-xl p-3 mb-3 bg-black/20">
+          <img id="manual-add-preview-image" class="w-24 h-24 object-cover rounded mb-2" alt="">
+          <div id="manual-add-preview-id" class="text-[10px] text-zinc-500"></div>
+          <div id="manual-add-preview-title" class="text-[11px] text-zinc-200"></div>
+          <div id="manual-add-preview-author" class="text-[10px] text-zinc-400"></div>
+          <div id="manual-add-preview-files" class="text-[10px] text-zinc-500"></div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button id="manual-add-submit" class="btn-action btn-primary">追加</button>
+        <button id="manual-add-cancel" class="btn-action">キャンセル</button>
+        <button id="manual-add-close" class="btn-action">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="hidden fixed inset-0 z-[94] bg-black/80 p-8 items-center justify-center">
+    <div class="settings-modal-shell mx-auto modal-card overflow-hidden flex flex-col">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-5 shrink-0 border-b border-white/10">
+        <div class="text-sm font-semibold text-zinc-100">設定</div>
+        <button id="settings-close" class="icon-btn" title="閉じる">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="flex flex-1 min-h-0 overflow-hidden">
+
+        <!-- Sidebar nav -->
+        <div class="settings-sidebar border-r border-white/8 py-2 overflow-y-auto">
+          <div class="px-3 space-y-0.5">
+            <button class="settings-tab active" data-tab="download">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download
+            </button>
+            <button class="settings-tab" data-tab="unity">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+              Unity
+            </button>
+            <button class="settings-tab" data-tab="cookie">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              Cookie
+            </button>
+            <button class="settings-tab" data-tab="runtime">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M4.93 19.07l1.41-1.41M19.07 19.07l-1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+              Runtime
+            </button>
+            <button class="settings-tab" data-tab="scheduler">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Scheduler
+            </button>
+            <button class="settings-tab" data-tab="shortcuts">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"/></svg>
+              Shortcuts
+            </button>
+            <button class="settings-tab" data-tab="profiles">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Profiles
+            </button>
+          </div>
+        </div>
+
+        <!-- Panels -->
+        <div class="settings-content">
+
+          <!-- Download -->
+          <div class="settings-panel" data-panel="download">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Download</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">ダウンロードパスと動作設定</div>
+            </div>
+            <div class="space-y-6">
+              <div>
+                <label class="panel-label">Download Path</label>
+                <input id="setting-download-path" type="text" class="panel-input" placeholder="例: C:\Users\...\Downloads\avatool">
+              </div>
+              <div class="settings-control-grid">
+                <div>
+                  <label class="panel-label">同時ダウンロード数</label>
+                  <input id="setting-concurrency" type="number" class="panel-input" placeholder="例: 3">
+                </div>
+                <div>
+                  <label class="panel-label">自動確認間隔 (分)</label>
+                  <input id="setting-auto-check-interval" type="number" class="panel-input" placeholder="例: 60">
+                </div>
+                <div>
+                  <label class="panel-label">最低空き容量 (GB)</label>
+                  <input id="setting-min-free-space-gb" type="number" class="panel-input" placeholder="例: 5">
+                </div>
+              </div>
+              <div class="border-t border-white/5">
+                <div class="setting-row">
+                  <span class="text-[13px] text-zinc-200">ダウンロード後に自動展開</span>
+                  <label class="switch">
+                    <input id="setting-auto-extract" type="checkbox">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Unity -->
+          <div class="settings-panel hidden" data-panel="unity">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Unity</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">Unity Editor パスとプロジェクト管理</div>
+            </div>
+            <div class="space-y-6">
+              <div class="settings-action-grid">
+                <div>
+                  <label class="panel-label">Unity Editor Path</label>
+                  <input id="setting-unity-path" type="text" class="panel-input" placeholder="Unity path">
+                </div>
+                <div>
+                  <button id="load-vcc-btn" class="btn-action w-full justify-center">VCCから読み込み</button>
+                </div>
+              </div>
+              <div>
+                <label class="panel-label">Unity Projects</label>
+                <div id="setting-unity-projects" class="settings-project-list text-[10px] text-zinc-400"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cookie -->
+          <div class="settings-panel hidden" data-panel="cookie">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Cookie</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">BOOTH セッション認証の管理</div>
+            </div>
+            <div class="space-y-6">
+              <div class="settings-action-grid">
+                <div>
+                  <label class="panel-label">Cookie File</label>
+                  <input id="setting-cookie-file" type="text" class="panel-input" placeholder="Cookie file">
+                </div>
+                <div>
+                  <button id="cookie-load-btn" class="btn-action w-full justify-center">Cookie読み込み</button>
+                </div>
+              </div>
+              <div class="settings-inline-actions pt-4 border-t border-white/5">
+                <button id="cookie-login-btn" class="btn-action">ログイン</button>
+                <button id="cookie-logout-btn" class="btn-action">ログアウト</button>
+                <div id="cookie-status" class="settings-status-line"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Runtime -->
+          <div class="settings-panel hidden" data-panel="runtime">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Runtime</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">動作モードとアプリバージョン管理</div>
+            </div>
+            <div class="divide-y divide-white/5">
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">Safe mode</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">危険な操作を制限する</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-safe-mode" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">起動時ヘルスチェック</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">起動時に環境の整合性を確認する</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-health-check-on-startup" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">Debug log</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">対応アバター解析のスコア内訳などをログへ出力する</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-debug-log-enabled" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-inline-actions mt-5 pt-4 border-t border-white/5">
+              <div class="text-[11px] text-zinc-400">
+                App Version: <span id="setting-app-version" class="font-mono-custom text-zinc-100">-</span>
+              </div>
+              <button id="settings-run-health-check" class="btn-action">ヘルスチェック実行</button>
+              <button id="setting-app-update-check" class="btn-action ml-auto">更新確認</button>
+            </div>
+            <div id="setting-app-update-status" class="text-[10px] text-zinc-500 min-h-[18px] mt-2"></div>
+            <div id="setting-app-update-progress-wrap" class="hidden mt-2">
+              <div class="h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-white/10">
+                <div id="setting-app-update-progress-bar" class="h-full bg-emerald-400/90 transition-all duration-300" style="width:0%"></div>
+              </div>
+              <div id="setting-app-update-progress-text" class="text-[10px] text-zinc-400 mt-1">0%</div>
+            </div>
+          </div>
+
+          <!-- Scheduler -->
+          <div class="settings-panel hidden" data-panel="scheduler">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Scheduler</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">夜間自動ダウンロードと描画・リトライ設定</div>
+            </div>
+            <div class="divide-y divide-white/5">
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">夜間スケジューラ有効</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">指定した時間帯に自動ダウンロードを実行する</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-scheduler-enabled" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-control-grid mt-6">
+              <div>
+                <label class="panel-label">スケジューラプロファイル</label>
+                <select id="setting-scheduler-profile" class="panel-input">
+                  <option value="light">Light</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="fast">Fast</option>
+                </select>
+              </div>
+              <div>
+                <label class="panel-label">開始時刻 (時)</label>
+                <input id="setting-scheduler-start-hour" type="number" min="0" max="23" class="panel-input" placeholder="例: 2">
+              </div>
+              <div>
+                <label class="panel-label">終了時刻 (時)</label>
+                <input id="setting-scheduler-end-hour" type="number" min="0" max="23" class="panel-input" placeholder="例: 6">
+              </div>
+            </div>
+            <div class="settings-control-grid mt-6 pt-6 border-t border-white/5">
+              <div>
+                <label class="panel-label">描画モード</label>
+                <select id="setting-render-mode" class="panel-input">
+                  <option value="progressive">だんだん描画 (15件ずつ)</option>
+                  <option value="instant">一気に描画</option>
+                </select>
+              </div>
+              <div>
+                <label class="panel-label">リトライ最大回数</label>
+                <input id="setting-retry-max-attempts" type="number" min="1" max="12" class="panel-input" placeholder="例: 3">
+              </div>
+              <div>
+                <label class="panel-label">リトライ遅延 (ms)</label>
+                <input id="setting-retry-base-delay-ms" type="number" min="200" max="120000" class="panel-input" placeholder="例: 1000">
+              </div>
+            </div>
+          </div>
+
+          <!-- Shortcuts -->
+          <div class="settings-panel hidden" data-panel="shortcuts">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Shortcuts</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">キーボードショートカットのカスタマイズ</div>
+            </div>
+            <div class="divide-y divide-white/5 mb-4">
+              <div class="setting-row">
+                <span class="text-[13px] text-zinc-200">キーボードショートカット有効</span>
+                <label class="switch">
+                  <input id="setting-keyboard-shortcuts-enabled" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div id="setting-shortcuts-editor" class="space-y-2"></div>
+            <div id="setting-shortcuts-warning" class="text-[10px] text-amber-300 min-h-[16px] mt-2"></div>
+            <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-white/5">
+              <span class="text-[10px] text-zinc-500">記法: /, g, Shift+D, Ctrl+F, Ctrl+,</span>
+              <button id="setting-shortcuts-reset" class="btn-action">初期値に戻す</button>
+            </div>
+          </div>
+
+          <!-- Profiles -->
+          <div class="settings-panel hidden" data-panel="profiles">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">Profiles</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">設定のプロファイル保存・適用・エクスポート</div>
+            </div>
+            <div class="space-y-6">
+              <div>
+                <label class="panel-label">プロファイル</label>
+                <div class="settings-two-grid mt-2">
+                  <input id="settings-profile-name" type="text" class="panel-input" placeholder="プロファイル名">
+                  <button id="settings-save-profile" class="btn-action w-full justify-center">プロファイル保存</button>
+                  <select id="settings-profile-select" class="panel-input"></select>
+                  <button id="settings-apply-profile" class="btn-action w-full justify-center">プロファイル適用</button>
+                </div>
+              </div>
+              <div class="border-t border-white/5 pt-4">
+                <label class="panel-label">エクスポート / インポート</label>
+                <div class="settings-two-grid mt-1">
+                  <input id="settings-export-path" type="text" class="panel-input" placeholder="Export path (json)">
+                  <button id="settings-export-btn" class="btn-action w-full justify-center">Export</button>
+                  <input id="settings-import-path" type="text" class="panel-input" placeholder="Import path (json)">
+                  <button id="settings-import-btn" class="btn-action w-full justify-center">Import</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="settings-footer">
+        <button id="settings-close-alt" class="btn-action text-zinc-400">キャンセル</button>
+        <button id="settings-save" class="btn-action btn-primary">保存</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="auto-bootstrap-modal" class="hidden fixed inset-0 z-[95] bg-black/80 p-8 items-center justify-center">
+    <div class="auto-bootstrap-shell mx-auto modal-card overflow-hidden flex flex-col">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-5 shrink-0 border-b border-white/10">
+        <div>
+          <div class="text-sm font-semibold text-zinc-100">Auto Bootstrap</div>
+          <div class="text-[11px] text-zinc-500 mt-0.5">自動インポートルールの構成</div>
+        </div>
+        <button id="auto-bootstrap-close" class="icon-btn" title="閉じる">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="auto-bootstrap-content">
+
+        <!-- General -->
+        <section class="auto-bootstrap-section">
+          <div class="auto-bootstrap-section-header">
+            <div>
+              <div class="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">General</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">基本の依存関係と自動処理</div>
+            </div>
+          </div>
+          <div class="auto-bootstrap-section-body divide-y divide-white/5">
+            <div class="setting-row">
+              <span class="text-[13px] text-zinc-200">自動インポートを有効にする</span>
+              <label class="switch"><input type="checkbox" id="auto-bootstrap-enabled"><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <span class="text-[13px] text-zinc-200">MA / NDMF の常駐を許可</span>
+              <label class="switch"><input type="checkbox" id="auto-bootstrap-include-ma"><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <span class="text-[13px] text-zinc-200">liltoon を標準で適用</span>
+              <label class="switch"><input type="checkbox" id="auto-bootstrap-include-liltoon"><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <span class="text-[13px] text-zinc-200">FaceEmo を標準で適用</span>
+              <label class="switch"><input type="checkbox" id="auto-bootstrap-include-faceemo"><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="auto-bootstrap-section-body spaced border-t border-white/5">
+            <div class="divide-y divide-white/5">
+              <div class="setting-row">
+                <span class="text-[13px] text-zinc-200 inline-flex items-center gap-1.5">
+                  Avatool 独自Script を導入
+                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-zinc-600 text-[10px] text-zinc-400 cursor-help select-none"
+                    title="Unityへのインポートを安定化する補助Script（バッチインポート橋渡し、ライブインポート橋渡し、フォルダアイコン再適用）を導入します。"
+                    aria-label="Avatool独自Scriptの説明">?</span>
+                </span>
+                <label class="switch"><input type="checkbox" id="auto-bootstrap-include-avatool-scripts"><span class="slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <span class="text-[13px] text-zinc-200">
+                  SimpleFolderIcon を導入
+                  <a href="https://github.com/SeaeeesSan/SimpleFolderIcon" target="_blank" rel="noopener noreferrer"
+                    class="ml-1 text-blue-400 hover:text-blue-300 underline text-[11px]">(GitHub)</a>
+                </span>
+                <label class="switch"><input type="checkbox" id="auto-bootstrap-include-simple-folder-icon"><span class="slider"></span></label>
+              </div>
+            </div>
+            <div class="auto-bootstrap-warning">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-400 mt-0.5 shrink-0"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span class="text-[11px] text-amber-300 leading-relaxed">上の 2 項目を OFF にすると、バックグラウンドインポートや通常インポート機能がすぐ使えない状態になる可能性があります。</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Import Rules -->
+        <section class="auto-bootstrap-section">
+          <div class="auto-bootstrap-section-header">
+            <div>
+              <div class="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Import Rules</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">プロジェクト名ごとのインポート対象</div>
+            </div>
+            <button id="auto-bootstrap-project-rules-add" class="btn-action text-[11px]">ルール追加</button>
+          </div>
+          <div class="auto-bootstrap-section-body padded">
+            <div id="auto-bootstrap-project-rules-list" class="space-y-3"></div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="auto-bootstrap-footer">
+        <div class="flex items-center gap-2 text-[11px] text-zinc-500">
+          <div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+          エンジン準備完了
+        </div>
+        <button id="auto-bootstrap-save" class="btn-action btn-primary">保存</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="rule-item-picker-modal" class="rule-item-picker-modal hidden">
+    <div class="rule-item-picker-shell modal-card">
+      <div class="rule-item-picker-header">
+        <div>
+          <div class="text-sm font-semibold text-zinc-100">Select Item</div>
+          <div class="text-[11px] text-zinc-500 mt-0.5">インポート対象のアイテムを選択</div>
+        </div>
+        <button id="rule-item-picker-close" class="icon-btn" title="閉じる">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="rule-item-picker-tools">
+        <input id="rule-item-picker-search" type="search" class="panel-input" placeholder="アイテムを検索">
+        <select id="rule-item-picker-sort" class="panel-input">
+          <option value="selected">選択中を先頭</option>
+          <option value="name">名前順</option>
+          <option value="newest">新しいID順</option>
+          <option value="oldest">古いID順</option>
+        </select>
+      </div>
+      <div id="rule-item-picker-grid" class="rule-item-picker-grid"></div>
+      <div class="rule-item-picker-footer">
+        <div id="rule-item-picker-count" class="text-[11px] text-zinc-500">0件選択中</div>
+        <div class="flex items-center gap-2">
+          <button id="rule-item-picker-cancel" class="btn-action text-zinc-400">キャンセル</button>
+          <button id="rule-item-picker-apply" class="btn-action btn-primary">選択を反映</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="project-items-modal" class="hidden fixed inset-0 z-[96] bg-black/80 p-4 items-center justify-center">
+    <div class="w-full max-w-2xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-bold">プロジェクト内アイテム</div>
+        <button id="project-items-close" class="btn-action">閉じる</button>
+      </div>
+      <select id="project-items-select" class="panel-input mb-2"></select>
+      <div id="project-items-status" class="text-[10px] text-zinc-400 mb-2"></div>
+      <button id="project-items-reconcile" class="btn-action mb-2">照合</button>
+      <div id="project-items-progress-wrap" class="hidden w-full h-1 bg-white/10 rounded mb-2">
+        <div id="project-items-progress-bar" class="h-full bg-blue-500 rounded" style="width:0%;"></div>
+      </div>
+      <div id="project-items-list" class="text-[10px] text-zinc-400 border border-white/10 rounded p-2 min-h-[120px] max-h-[46vh] overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <div id="app-update-progress-float" class="fixed bottom-5 right-5 z-[101] hidden w-[280px] border border-emerald-500/40 bg-black/90 rounded px-3 py-2">
+    <div class="text-[10px] text-emerald-200 mb-1">アプリ更新ダウンロード中</div>
+    <div class="h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-white/10">
+      <div id="app-update-progress-float-bar" class="h-full bg-emerald-400/90 transition-all duration-300" style="width:0%"></div>
+    </div>
+    <div id="app-update-progress-float-text" class="text-[10px] text-zinc-400 mt-1">0%</div>
+  </div>
+
+  <script src="./renderer/render_shortcuts.js"></script>
+  <script src="./renderer/render_avatar_filter.js"></script>
+  <script src="./renderer/render_overlays.js"></script>
+  <script src="./renderer/render_aux_ui.js"></script>
+  <script src="./renderer/render_app_state.js"></script>
+  <script src="./renderer/render_project_items.js"></script>
+  <script src="./renderer/render_settings_tools.js"></script>
+  <script src="./renderer/render_auto_bootstrap.js"></script>
+  <script src="./renderer/render_import_modal.js"></script>
+  <script src="./renderer/render_preview_modal.js"></script>
+  <script src="./renderer/render_library_actions.js"></script>
+  <script src="./renderer/render_asset_list.js"></script>
+  <script src="./renderer/render_queue_ui.js"></script>
+  <script src="./render.js"></script>
+</body>
+</html>
