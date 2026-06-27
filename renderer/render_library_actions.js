@@ -175,6 +175,136 @@
       }
     }
 
+    function mapWishlistError(raw) {
+      const msg = String(raw || '');
+      if (msg.includes('invalid_item_id_or_url')) return 'URLまたはIDの形式が正しくありません。（例: https://booth.pm/ja/items/1234567 または 1234567）';
+      if (msg.includes('item_json_fetch_failed')) return 'アイテム情報を取得できませんでした（URL/IDを確認してください）。';
+      return msg || '不明なエラー';
+    }
+
+    function openWishlistAddModal() {
+      if (!domRefs.wishlistAddModal) return;
+      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '';
+      if (domRefs.wishlistAddInput) domRefs.wishlistAddInput.value = '';
+      domRefs.wishlistAddModal.classList.remove('hidden');
+      domRefs.wishlistAddModal.classList.add('flex');
+      setTimeout(() => domRefs.wishlistAddInput?.focus(), 50);
+    }
+
+    function closeWishlistAddModal() {
+      domRefs.wishlistAddModal?.classList.add('hidden');
+      domRefs.wishlistAddModal?.classList.remove('flex');
+    }
+
+    function resetWishlistPreview() {
+      if (state.wishlistPreviewTimer) {
+        clearTimeout(state.wishlistPreviewTimer);
+        state.wishlistPreviewTimer = null;
+      }
+      state.wishlistDraft = null;
+      if (domRefs.wishlistAddPreviewBox) domRefs.wishlistAddPreviewBox.classList.add('hidden');
+      if (domRefs.wishlistAddPreviewId) domRefs.wishlistAddPreviewId.textContent = '';
+      if (domRefs.wishlistAddPreviewTitle) domRefs.wishlistAddPreviewTitle.textContent = '';
+      if (domRefs.wishlistAddPreviewAuthor) domRefs.wishlistAddPreviewAuthor.textContent = '';
+      if (domRefs.wishlistAddPreviewImage) {
+        domRefs.wishlistAddPreviewImage.removeAttribute('src');
+        domRefs.wishlistAddPreviewImage.classList.add('hidden');
+      }
+      if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = true;
+    }
+
+    async function previewWishlistAdd({ auto = false } = {}) {
+      const input = String(domRefs.wishlistAddInput?.value || '').trim();
+      if (!input) {
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'URLまたはIDを入力してください。';
+        return;
+      }
+      if (!boothAPI.previewWishlistItem) {
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'previewWishlistItem API が利用できません。';
+        return;
+      }
+      if (domRefs.wishlistAddPreview) domRefs.wishlistAddPreview.disabled = true;
+      if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = true;
+      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '確認中...';
+      try {
+        const res = await boothAPI.previewWishlistItem(input);
+        if (res?.error) throw new Error(mapWishlistError(res.error));
+        state.wishlistDraft = {
+          itemIdOrUrl: input,
+          itemId: String(res.itemId || ''),
+          title: String(res.title || ''),
+          author: String(res.author || ''),
+          previewUrl: String(res.previewUrl || ''),
+        };
+        if (domRefs.wishlistAddPreviewId) domRefs.wishlistAddPreviewId.textContent = state.wishlistDraft.itemId;
+        if (domRefs.wishlistAddPreviewTitle) domRefs.wishlistAddPreviewTitle.textContent = state.wishlistDraft.title || '-';
+        if (domRefs.wishlistAddPreviewAuthor) domRefs.wishlistAddPreviewAuthor.textContent = state.wishlistDraft.author || '-';
+        if (domRefs.wishlistAddPreviewImage) {
+          const url = String(state.wishlistDraft.previewUrl || '').trim();
+          if (url) {
+            domRefs.wishlistAddPreviewImage.src = url;
+            domRefs.wishlistAddPreviewImage.classList.remove('hidden');
+          } else {
+            domRefs.wishlistAddPreviewImage.removeAttribute('src');
+            domRefs.wishlistAddPreviewImage.classList.add('hidden');
+          }
+        }
+        if (domRefs.wishlistAddPreviewBox) domRefs.wishlistAddPreviewBox.classList.remove('hidden');
+        if (domRefs.wishlistAddStatus) {
+          domRefs.wishlistAddStatus.textContent = auto
+            ? 'プレビューを更新しました。追加できます。'
+            : '内容を確認しました。追加できます。';
+        }
+        if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = false;
+      } catch (error) {
+        resetWishlistPreview();
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = `確認失敗: ${String(error?.message || error)}`;
+        if (!auto) {
+          showTransientMessage(`ほしいリスト確認に失敗: ${String(error?.message || error)}`, 'error');
+        }
+      } finally {
+        if (domRefs.wishlistAddPreview) domRefs.wishlistAddPreview.disabled = false;
+      }
+    }
+
+    function scheduleWishlistPreview() {
+      if (state.wishlistPreviewTimer) clearTimeout(state.wishlistPreviewTimer);
+      const input = String(domRefs.wishlistAddInput?.value || '').trim();
+      if (!input) return;
+      state.wishlistPreviewTimer = setTimeout(() => {
+        state.wishlistPreviewTimer = null;
+        previewWishlistAdd({ auto: true }).catch(() => {});
+      }, 450);
+    }
+
+    async function submitWishlistAdd() {
+      const draft = state.wishlistDraft || null;
+      if (!draft || !draft.itemId) {
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '先に確認を実行してください。';
+        return;
+      }
+      if (!boothAPI.toggleWishlist) {
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'toggleWishlist API が利用できません。';
+        return;
+      }
+      if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = true;
+      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '追加中...';
+      try {
+        const res = await boothAPI.toggleWishlist(draft.itemId, draft.itemIdOrUrl);
+        if (res?.error) throw new Error(mapWishlistError(res.error));
+        await reloadAssetsMap();
+        showTransientMessage(`ほしいリストに追加しました: ${draft.title || draft.itemId}`, 'info');
+        resetWishlistPreview();
+        closeWishlistAddModal();
+      } catch (error) {
+        const msg = String(error?.message || error);
+        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = `追加失敗: ${msg}`;
+        showTransientMessage(`ほしいリスト追加に失敗: ${msg}`, 'error');
+      } finally {
+        if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = false;
+      }
+    }
+
     async function handleBatchImportSelection() {
       if (state.selectedItems.size === 0) return;
       const originalText = domRefs.btnBatchImport?.textContent || '';
@@ -246,6 +376,35 @@
       domRefs.btnBatchImport?.addEventListener('click', async () => {
         await handleBatchImportSelection();
       });
+
+      domRefs.wishlistAddBtn?.addEventListener('click', () => {
+        openWishlistAddModal();
+        resetWishlistPreview();
+      });
+      domRefs.wishlistAddCancel?.addEventListener('click', () => {
+        closeWishlistAddModal();
+      });
+      domRefs.wishlistAddClose?.addEventListener('click', () => {
+        closeWishlistAddModal();
+      });
+      domRefs.wishlistAddSubmit?.addEventListener('click', async () => {
+        await submitWishlistAdd();
+      });
+      domRefs.wishlistAddPreview?.addEventListener('click', async () => {
+        await previewWishlistAdd();
+      });
+      if (domRefs.wishlistAddInput) {
+        domRefs.wishlistAddInput.addEventListener('input', () => {
+          resetWishlistPreview();
+          if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '入力を確認中...';
+          scheduleWishlistPreview();
+        });
+        domRefs.wishlistAddInput.addEventListener('keydown', async (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          await previewWishlistAdd();
+        });
+      }
     }
 
     return {
@@ -256,6 +415,12 @@
       previewManualAdd,
       scheduleManualAddPreview,
       submitManualAdd,
+      openWishlistAddModal,
+      closeWishlistAddModal,
+      resetWishlistPreview,
+      previewWishlistAdd,
+      scheduleWishlistPreview,
+      submitWishlistAdd,
       handleBatchImportSelection,
     };
   }

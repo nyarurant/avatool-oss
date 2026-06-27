@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld('boothAPI', {
   markUpdateSeen: (itemId, files, expectedStableHash) => ipcRenderer.invoke('mark-update-seen', itemId, files, expectedStableHash),
   previewManualFreeAsset: (itemIdOrUrl) => ipcRenderer.invoke('preview-manual-free-asset', { itemIdOrUrl }),
   addManualFreeAsset: (itemIdOrUrl) => ipcRenderer.invoke('add-manual-free-asset', { itemIdOrUrl }),
+  previewWishlistItem: (itemIdOrUrl) => ipcRenderer.invoke('preview-wishlist-item', { itemIdOrUrl }),
+  toggleWishlist: (itemId, itemIdOrUrl) => ipcRenderer.invoke('toggle-wishlist', { itemId, itemIdOrUrl }),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
   runHealthCheck: (trigger = 'manual') => ipcRenderer.invoke('run-health-check', trigger),

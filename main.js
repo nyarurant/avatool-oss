@@ -1057,6 +1057,23 @@ async function resolveManualFreeAssetCandidate(rawInput) {
   return { ok: true, itemId, itemJson, links, item };
 }
 
+async function resolveWishlistCandidate(rawInput) {
+  await ensureClientReady();
+  const itemId = extractBoothItemId(rawInput);
+  if (!itemId) return { error: 'invalid_item_id_or_url' };
+
+  let itemJson = {};
+  try {
+    const jsonRes = await boothClient.get(`/ja/items/${itemId}.json`, { responseType: 'json' });
+    itemJson = jsonRes?.data || {};
+  } catch (e) {
+    return { error: `item_json_fetch_failed: ${e?.message || String(e)}` };
+  }
+
+  const item = metaMgr.createWishlistMetaItem(itemId, itemJson);
+  return { ok: true, itemId, itemJson, item };
+}
+
 function applyVersionTrackingKeepingManual(existingMeta, latestMeta, detectedAt = new Date().toISOString()) {
   return metaMgr.applyVersionTrackingKeepingManual(existingMeta, latestMeta, detectedAt);
 }
@@ -2197,6 +2214,7 @@ registerIpcHandlers({
   extractBoothItemId,
   createManualFreeMetaItem,
   resolveManualFreeAssetCandidate,
+  resolveWishlistCandidate,
   toBoothCategoryRowsFromItemJson,
   parseAutoBootstrapChoiceKey,
   listAutoBootstrapVariantOptions,

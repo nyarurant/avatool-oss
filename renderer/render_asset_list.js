@@ -577,9 +577,10 @@
         }
       }
       if (domRefs.filterBtns) {
+        const validViews = ['updated', 'review', 'wishlist', 'removed'];
         domRefs.filterBtns.forEach((btn) => {
           const raw = btn.dataset.filter || 'all';
-          const view = raw === 'updated' ? 'updated' : 'all';
+          const view = validViews.includes(raw) ? raw : 'all';
           btn.classList.toggle('active', view === state.viewFilter);
         });
       }
@@ -606,10 +607,19 @@
             return categories.some((category) => category.slug === state.currentCategory || category.text === state.currentCategory);
           });
 
+      // isRemoved items are hidden by default unless explicitly filtering for them
+      if (state.viewFilter !== 'removed') {
+        filtered = filtered.filter((asset) => !asset.isRemoved);
+      } else {
+        filtered = filtered.filter((asset) => Boolean(asset.isRemoved));
+      }
+
       if (state.viewFilter === 'updated') {
         filtered = filtered.filter((asset) => Boolean(asset.hasUpdate));
       } else if (state.viewFilter === 'review') {
         filtered = filtered.filter((asset) => String(asset?.supportedAvatarAnalysis?.status || '') === 'review');
+      } else if (state.viewFilter === 'wishlist') {
+        filtered = filtered.filter((asset) => Boolean(asset.isWishlisted));
       }
       const activeAvatarFilters = Array.isArray(state.avatarFilters) && state.avatarFilters.length
         ? state.avatarFilters
@@ -1176,7 +1186,8 @@
             domRefs.filterBtns.forEach((row) => row.classList.remove('active'));
             button.classList.add('active');
             const raw = button.dataset.filter || 'all';
-            const view = raw === 'updated' ? 'updated' : 'all';
+            const validViews = ['updated', 'review', 'wishlist', 'removed'];
+            const view = validViews.includes(raw) ? raw : 'all';
             applyViewFilter(view);
           });
         });

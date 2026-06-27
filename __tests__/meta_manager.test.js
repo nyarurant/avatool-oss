@@ -302,13 +302,29 @@ describe('applyVersionTrackingKeepingManual', () => {
     expect(items.find((i) => i.itemId === '100')).toBeDefined();
   });
 
-  test('manualAdded でないアイテムが latestMeta から消えた場合は削除される', () => {
+  test('manualAdded でないアイテムが latestMeta から消えた場合は isRemoved: true で保持される', () => {
     const AT2 = '2026-02-01T00:00:00.000Z';
     // 初回: アイテム 100 を登録
     const v1 = applyVersionTrackingKeepingManual([], [makeItem('100', ['a.zip'])], AT).items;
     // 2回目: アイテム 100 が latestMeta から消えた
     const { items } = applyVersionTrackingKeepingManual(v1, [], AT2);
-    expect(items.find((i) => i.itemId === '100')).toBeUndefined();
+    const removed = items.find((i) => i.itemId === '100');
+    expect(removed).toBeDefined();
+    expect(removed.isRemoved).toBe(true);
+    expect(removed.removedAt).toBeDefined();
+  });
+
+  test('isRemoved アイテムが latestMeta に再登場した場合は isRemoved フラグが解除される', () => {
+    const AT2 = '2026-02-01T00:00:00.000Z';
+    const AT3 = '2026-03-01T00:00:00.000Z';
+    const v1 = applyVersionTrackingKeepingManual([], [makeItem('100', ['a.zip'])], AT).items;
+    const v2 = applyVersionTrackingKeepingManual(v1, [], AT2).items;
+    expect(v2.find((i) => i.itemId === '100')?.isRemoved).toBe(true);
+    // 再登場
+    const { items } = applyVersionTrackingKeepingManual(v2, [makeItem('100', ['a.zip'])], AT3);
+    const reappeared = items.find((i) => i.itemId === '100');
+    expect(reappeared).toBeDefined();
+    expect(reappeared.isRemoved).toBeFalsy();
   });
 
   test('既存 manualItem が latestMeta にも存在する場合は latestMeta 側が優先', () => {

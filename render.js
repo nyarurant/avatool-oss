@@ -487,6 +487,19 @@ const domRefs = {
   manualAddSubmit: document.getElementById('manual-add-submit'),
   manualAddCancel: document.getElementById('manual-add-cancel'),
   manualAddClose: document.getElementById('manual-add-close'),
+  wishlistAddBtn: document.getElementById('wishlist-add-btn'),
+  wishlistAddModal: document.getElementById('wishlist-add-modal'),
+  wishlistAddInput: document.getElementById('wishlist-add-input'),
+  wishlistAddStatus: document.getElementById('wishlist-add-status'),
+  wishlistAddPreview: document.getElementById('wishlist-add-preview'),
+  wishlistAddPreviewBox: document.getElementById('wishlist-add-preview-box'),
+  wishlistAddPreviewImage: document.getElementById('wishlist-add-preview-image'),
+  wishlistAddPreviewId: document.getElementById('wishlist-add-preview-id'),
+  wishlistAddPreviewTitle: document.getElementById('wishlist-add-preview-title'),
+  wishlistAddPreviewAuthor: document.getElementById('wishlist-add-preview-author'),
+  wishlistAddSubmit: document.getElementById('wishlist-add-submit'),
+  wishlistAddCancel: document.getElementById('wishlist-add-cancel'),
+  wishlistAddClose: document.getElementById('wishlist-add-close'),
 };
 
 // ========== Application State ==========
@@ -550,6 +563,8 @@ const state = {
   settingsProfiles: [],
   manualAddDraft: null,
   manualAddPreviewTimer: null,
+  wishlistDraft: null,
+  wishlistPreviewTimer: null,
   updateCheckRunning: false,
   metaProgress: {
     globalMax: 0,
@@ -1269,7 +1284,17 @@ function createAssetTile(asset) {
   infoContainer.className = 'flex flex-col gap-1.5 flex-1';
 
   // 1. Category badge
-  if (categoryText && categoryText !== 'その他') {
+  if (asset.isRemoved) {
+    const removedBadge = document.createElement('span');
+    removedBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 self-start truncate max-w-full';
+    removedBadge.textContent = '削除済み';
+    infoContainer.appendChild(removedBadge);
+  } else if (asset.isWishlisted && !asset.downloaded) {
+    const wishBadge = document.createElement('span');
+    wishBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-300 border border-pink-500/20 self-start truncate max-w-full';
+    wishBadge.textContent = 'ほしい';
+    infoContainer.appendChild(wishBadge);
+  } else if (categoryText && categoryText !== 'その他') {
     const catBadge = document.createElement('span');
     catBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 self-start truncate max-w-full';
     catBadge.textContent = categoryText;
@@ -1346,11 +1371,19 @@ function createAssetTile(asset) {
   const buttonRow = document.createElement('div');
   buttonRow.className = 'flex items-center justify-between gap-2';
 
+  const isWishlistOnly = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
+
   const dlBtn = document.createElement('button');
-  dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition ${asset.downloaded
-    ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
-    : 'border-gray-700 hover:bg-white hover:text-black'}`;
-  dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
+  if (isWishlistOnly) {
+    dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border border-pink-500/30 text-pink-400/60 transition cursor-default';
+    dlBtn.textContent = '未購入';
+    dlBtn.disabled = true;
+  } else {
+    dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition ${asset.downloaded
+      ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
+      : 'border-gray-700 hover:bg-white hover:text-black'}`;
+    dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
+  }
 
   const openBtn = document.createElement('button');
   openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-500 hover:text-white transition';
@@ -3028,6 +3061,12 @@ function scheduleManualAddPreview(...args) { return callRendererModule('libraryA
 
 async function submitManualAdd(...args) { return callRendererModule('libraryActions', 'submitManualAdd', args); }
 
+function openWishlistAddModal(...args) { return callRendererModule('libraryActions', 'openWishlistAddModal', args); }
+
+function closeWishlistAddModal(...args) { return callRendererModule('libraryActions', 'closeWishlistAddModal', args); }
+
+function resetWishlistPreview(...args) { return callRendererModule('libraryActions', 'resetWishlistPreview', args); }
+
 function renderImportProjectList(...args) { return callRendererModule('importModal', 'renderImportProjectList', args); }
 
 async function updateProjectImportPreset(...args) { return callRendererModule('importModal', 'updateProjectImportPreset', args); }
@@ -3213,6 +3252,10 @@ function closeTopOverlayOrMode() {
   }
   if (isElementShown(domRefs.manualAddModal)) {
     closeManualAddModal();
+    return true;
+  }
+  if (isElementShown(domRefs.wishlistAddModal)) {
+    closeWishlistAddModal();
     return true;
   }
   if (isElementShown(domRefs.pkgSelectModal)) {
@@ -3921,6 +3964,9 @@ function wireRendererModules() {
     previewManualAdd = libraryActionsUi.previewManualAdd;
     scheduleManualAddPreview = libraryActionsUi.scheduleManualAddPreview;
     submitManualAdd = libraryActionsUi.submitManualAdd;
+    openWishlistAddModal = libraryActionsUi.openWishlistAddModal;
+    closeWishlistAddModal = libraryActionsUi.closeWishlistAddModal;
+    resetWishlistPreview = libraryActionsUi.resetWishlistPreview;
   }
 
   const assetListUi = safeCreateRendererModule('assetList', () => createRenderAssetList({

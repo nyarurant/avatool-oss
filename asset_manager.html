@@ -348,6 +348,8 @@
       <nav class="flex items-center gap-1">
         <button class="filter-btn active px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5" data-filter="all">すべて</button>
         <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="updated">更新あり</button>
+        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="wishlist">ほしい</button>
+        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="removed">削除済み</button>
       </nav>
     </div>
 
@@ -378,6 +380,10 @@
         </button>
       </div>
       <div class="flex items-center gap-2">
+        <button id="wishlist-add-btn" class="btn-action !px-4 !py-2" title="ほしいリストにアイテムを追加">
+          <span class="font-mono-custom text-[13px] leading-none">♡</span>
+          <span>ほしいリスト</span>
+        </button>
         <button id="manual-add-btn" class="btn-action btn-primary !px-4 !py-2 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]" title="無料アセットを手動で追加">
           <span class="font-mono-custom text-[13px] leading-none">+</span>
           <span>無料アセット追加</span>
@@ -691,6 +697,28 @@
         <button id="manual-add-submit" class="btn-action btn-primary">追加</button>
         <button id="manual-add-cancel" class="btn-action">キャンセル</button>
         <button id="manual-add-close" class="btn-action">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wishlist-add-modal" class="hidden fixed inset-0 z-[93] bg-black/80 p-4 items-center justify-center">
+    <div class="w-full max-w-xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
+      <div class="text-sm font-bold mb-3">ほしいリストに追加</div>
+      <div class="overflow-y-auto pr-1">
+        <input id="wishlist-add-input" type="text" class="panel-input mb-2" placeholder="BOOTHのURLまたはID">
+        <div id="wishlist-add-status" class="text-[10px] text-zinc-400 mb-2"></div>
+        <button id="wishlist-add-preview" class="btn-action mb-3">確認</button>
+        <div id="wishlist-add-preview-box" class="hidden border border-white/10 rounded-xl p-3 mb-3 bg-black/20">
+          <img id="wishlist-add-preview-image" class="w-24 h-24 object-cover rounded mb-2" alt="">
+          <div id="wishlist-add-preview-id" class="text-[10px] text-zinc-500"></div>
+          <div id="wishlist-add-preview-title" class="text-[11px] text-zinc-200"></div>
+          <div id="wishlist-add-preview-author" class="text-[10px] text-zinc-400"></div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button id="wishlist-add-submit" class="btn-action btn-primary">追加</button>
+        <button id="wishlist-add-cancel" class="btn-action">キャンセル</button>
+        <button id="wishlist-add-close" class="btn-action">閉じる</button>
       </div>
     </div>
   </div>
