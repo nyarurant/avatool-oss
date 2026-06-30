@@ -276,6 +276,19 @@ describe('pickPurchasedBootstrapAssets', () => {
   });
 });
 
+describe('getKnownPurchasedItemIds', () => {
+  test('ほしいリスト専用アイテムは購入済み既知IDから除外する', () => {
+    const { getKnownPurchasedItemIds, isWishlistOnlyMetaItem } = createMetaManager(makeDeps());
+    const rows = [
+      { itemId: '100', downloadLinks: [{ downloadableId: '1', fileName: 'a.zip' }] },
+      { itemId: '200', isWishlisted: true, downloadLinks: [] },
+      { itemId: '300', isWishlisted: true, downloadLinks: [{ downloadableId: '2', fileName: 'b.zip' }] },
+    ];
+    expect(isWishlistOnlyMetaItem(rows[1])).toBe(true);
+    expect(getKnownPurchasedItemIds(rows)).toEqual(['100', '300']);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // applyVersionTrackingKeepingManual
 // ---------------------------------------------------------------------------
