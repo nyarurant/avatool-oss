@@ -335,6 +335,36 @@ describe('applyVersionTrackingKeepingManual', () => {
     // latestMeta に存在するので重複追加はされない
     expect(items.filter((i) => i.itemId === '100')).toHaveLength(1);
   });
+
+  test('isWishlisted=true のアイテムは latestMeta から消えても保持される', () => {
+    const wishlistItem = {
+      ...makeItem('999', []),
+      isWishlisted: true,
+      wishlistAddedAt: AT,
+    };
+    const existing = [wishlistItem];
+    const latest = [makeItem('100', ['a.zip'])]; // wishlistItem は含まれない
+    const { items } = applyVersionTrackingKeepingManual(existing, latest, AT);
+    const kept = items.find((i) => i.itemId === '999');
+    expect(kept).toBeDefined();
+    expect(kept.isWishlisted).toBe(true);
+    expect(kept.isRemoved).toBeFalsy();
+  });
+
+  test('isWishlisted アイテムが latestMeta に登場した場合は通常アイテムに昇格する', () => {
+    const wishlistItem = {
+      ...makeItem('999', []),
+      isWishlisted: true,
+      wishlistAddedAt: AT,
+    };
+    const existing = [wishlistItem];
+    const latest = [makeItem('999', ['purchased.zip'])];
+    const { items } = applyVersionTrackingKeepingManual(existing, latest, AT);
+    const upgraded = items.find((i) => i.itemId === '999');
+    expect(upgraded).toBeDefined();
+    expect(upgraded.downloadLinks).toHaveLength(1);
+    expect(upgraded.isRemoved).toBeFalsy();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -407,6 +437,79 @@ describe('createManualFreeMetaItem', () => {
 });
 
 // ---------------------------------------------------------------------------
+// createWishlistMetaItem
+// ---------------------------------------------------------------------------
+
+describe('createWishlistMetaItem', () => {
+  const { createWishlistMetaItem } = createMetaManager(makeDeps());
+
+  test('基本フィールドが正しく設定される', () => {
+    const result = createWishlistMetaItem('9999', { name: 'My Outfit' });
+    expect(result.itemId).toBe('9999');
+    expect(result.itemName).toBe('My Outfit');
+    expect(result.isWishlisted).toBe(true);
+    expect(result.wishlistAddedAt).toBeTruthy();
+    expect(result.downloadLinks).toEqual([]);
+  });
+
+  test('itemJson が null でもクラッシュしない', () => {
+    const result = createWishlistMetaItem('1', null);
+    expect(result.itemId).toBe('1');
+    expect(result.itemName).toMatch(/Wishlist Item/);
+    expect(result.isWishlisted).toBe(true);
+  });
+
+  test('shop 情報が authorName にマッピングされる', () => {
+    const result = createWishlistMetaItem('1', {
+      name: 'Hat',
+      shop: { name: 'ShopA', url: 'https://booth.pm/ja/shop/shopA', thumbnail_url: '' },
+    });
+    expect(result.authorName).toBe('ShopA');
+    expect(result.authorShopUrl).toBe('https://booth.pm/ja/shop/shopA');
+  });
+
+  test('category 情報が categories にマッピングされる', () => {
+    const result = createWishlistMetaItem('1', {
+      name: 'X',
+      category: {
+        url: 'https://booth.pm/ja/browse/Tops',
+        name: 'トップス',
+        parent: { url: 'https://booth.pm/ja/browse/Clothes', name: '衣装' },
+      },
+    });
+    expect(result.categories).toHaveLength(2);
+    expect(result.categories[0].text).toBe('衣装');
+    expect(result.categories[1].text).toBe('トップス');
+    expect(result.primaryCategory?.text).toBe('トップス');
+  });
+
+  test('manualAdded は設定されない', () => {
+    const result = createWishlistMetaItem('1', {});
+    expect(result.manualAdded).toBeUndefined();
+  });
+
+  test('複数バリエーションの価格レンジを保持する', () => {
+    const result = createWishlistMetaItem('1', {
+      name: 'X',
+      variations: [
+        { name: 'Avatar A', price: 1200 },
+        { name: 'Avatar B', price: 1800 },
+        { name: 'Avatar C', price: 2400 },
+      ],
+    });
+    expect(result.price).toBe(1200);
+    expect(result.priceMin).toBe(1200);
+    expect(result.priceMax).toBe(2400);
+    expect(result.priceVariationCount).toBe(3);
+    expect(result.priceVariations).toEqual([
+      { name: 'Avatar A', price: 1200 },
+      { name: 'Avatar B', price: 1800 },
+      { name: 'Avatar C', price: 2400 },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // toAssetMap
 // ---------------------------------------------------------------------------
 
@@ -419,6 +522,8 @@ describe('toAssetMap', () => {
       itemId: '100',
       itemName: 'Test Item',
       authorName: 'Author',
+      authorId: 'author-1',
+      authorShopUrl: 'https://author.booth.pm/',
       downloadLinks: [{ downloadableId: '1', fileName: 'a.zip' }],
       supportedAvatarAnalysis: {
         primaryAvatar: 'Sio',
@@ -434,6 +539,8 @@ describe('toAssetMap', () => {
     expect(map['100']).toBeDefined();
     expect(map['100'].title).toBe('Test Item');
     expect(map['100'].author).toBe('Author');
+    expect(map['100'].authorId).toBe('author-1');
+    expect(map['100'].authorShopUrl).toBe('https://author.booth.pm/');
     expect(map['100'].files).toHaveLength(1);
     expect(map['100'].supportedAvatarAnalysis.status).toBe('confirmed');
     expect(map['100'].supportedAvatarAnalysis.primaryAvatar).toBe('Sio');
@@ -490,6 +597,53 @@ describe('toAssetMap', () => {
     expect(map['1'].hasUpdate).toBe(true);
     expect(map['1'].isGift).toBe(true);
     expect(map['1'].isAvatarItem).toBe(true);
+  });
+
+  test('userTags / userNote がマッピングされる', () => {
+    const { toAssetMap } = createMetaManager(makeDeps());
+    const map = toAssetMap([{
+      itemId: '1',
+      itemName: 'X',
+      downloadLinks: [],
+      userTags: ['しなの', '衣装'],
+      userNote: 'メモです',
+    }]);
+    expect(map['1'].userTags).toEqual(['しなの', '衣装']);
+    expect(map['1'].userNote).toBe('メモです');
+  });
+
+  test('userTags / userNote が未設定の場合はデフォルト値になる', () => {
+    const { toAssetMap } = createMetaManager(makeDeps());
+    const map = toAssetMap([{ itemId: '1', itemName: 'X', downloadLinks: [] }]);
+    expect(map['1'].userTags).toEqual([]);
+    expect(map['1'].userNote).toBe('');
+  });
+
+  test('isWishlisted / isRemoved がマッピングされる', () => {
+    const { toAssetMap } = createMetaManager(makeDeps());
+    const map = toAssetMap([
+      { itemId: '1', itemName: 'W', downloadLinks: [], isWishlisted: true, wishlistAddedAt: '2026-01-01T00:00:00.000Z', price: 1200, priceMin: 1200, priceMax: 2400, priceVariationCount: 3, priceVariations: [{ name: 'Avatar A', price: 1200 }, { name: 'おやつ代', price: 2400 }], lastPriceCheckedAt: 1700000000000 },
+      { itemId: '2', itemName: 'R', downloadLinks: [], isRemoved: true, removedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+    expect(map['1'].isWishlisted).toBe(true);
+    expect(map['1'].wishlistAddedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(map['1'].price).toBe(1200);
+    expect(map['1'].priceMin).toBe(1200);
+    expect(map['1'].priceMax).toBe(2400);
+    expect(map['1'].priceVariationCount).toBe(3);
+    expect(map['1'].priceVariations).toEqual([{ name: 'Avatar A', price: 1200 }, { name: 'おやつ代', price: 2400 }]);
+    expect(map['1'].lastPriceCheckedAt).toBe(1700000000000);
+    expect(map['2'].isRemoved).toBe(true);
+    expect(map['2'].removedAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  test('isWishlisted / isRemoved が未設定の場合は false / null になる', () => {
+    const { toAssetMap } = createMetaManager(makeDeps());
+    const map = toAssetMap([{ itemId: '1', itemName: 'X', downloadLinks: [] }]);
+    expect(map['1'].isWishlisted).toBe(false);
+    expect(map['1'].wishlistAddedAt).toBeNull();
+    expect(map['1'].isRemoved).toBe(false);
+    expect(map['1'].removedAt).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Booth Asset Manager - Optimized Renderer
  * Main renderer entry for UI composition, IPC wiring, and asset interactions.
  */
@@ -192,6 +192,14 @@ const createRenderPreviewModal = requireRendererFactory('AvatoolRenderPreviewMod
 const createRenderLibraryActions = requireRendererFactory('AvatoolRenderLibraryActions', 'createRenderLibraryActions');
 const createRenderAssetList = requireRendererFactory('AvatoolRenderAssetList', 'createRenderAssetList');
 const createRenderQueueUI = requireRendererFactory('AvatoolRenderQueueUI', 'createRenderQueueUI');
+const createBoothSearchView = (() => {
+  const m = window.AvatoolBoothSearch;
+  return typeof m?.createBoothSearchView === 'function' ? m.createBoothSearchView : null;
+})();
+const createBoothClientView = (() => {
+  const m = window.AvatoolBoothClient;
+  return typeof m?.createBoothClientView === 'function' ? m.createBoothClientView : null;
+})();
 const rendererModules = {};
 const rendererModuleFailures = [];
 const rendererModuleFailureKeys = new Set();
@@ -448,6 +456,24 @@ const domRefs = {
   modalPreviewInfo: document.getElementById('modal-preview-info'),
   assetAvatarAnalysis: document.getElementById('asset-avatar-analysis'),
   assetImportHistory: document.getElementById('asset-import-history'),
+  assetUserMeta: document.getElementById('asset-user-meta'),
+  modalAssetTitleText: document.getElementById('modal-asset-title-text'),
+  modalAssetAuthorText: document.getElementById('modal-asset-author-text'),
+  modalCopyTitle: document.getElementById('modal-copy-title'),
+  modalCopyAuthor: document.getElementById('modal-copy-author'),
+  modalUserTagsList: document.getElementById('modal-user-tags-list'),
+  modalUserTagInput: document.getElementById('modal-user-tag-input'),
+  modalUserTagAdd: document.getElementById('modal-user-tag-add'),
+  modalUserNote: document.getElementById('modal-user-note'),
+  modalUserNoteStatus: document.getElementById('modal-user-note-status'),
+  modalWishlistCartWrap: document.getElementById('modal-wishlist-cart-wrap'),
+  modalWishlistCartBtn: document.getElementById('modal-wishlist-cart-btn'),
+  modalWishlistBuyBtn: document.getElementById('modal-wishlist-buy-btn'),
+  modalWishlistRemoveBtn: document.getElementById('modal-wishlist-remove-btn'),
+  modalOpenEntryBtn: document.getElementById('modal-open-entry'),
+  modalTreePanel: document.getElementById('modal-tree-panel'),
+  modalFilePanel: document.getElementById('modal-file-panel'),
+  modalInspectorPanel: document.getElementById('modal-inspector-panel'),
   modalOpenEntryBtn: document.getElementById('modal-open-entry'),
   importModal: document.getElementById('import-modal'),
   importProjectList: document.getElementById('import-project-list'),
@@ -500,6 +526,8 @@ const domRefs = {
   wishlistAddSubmit: document.getElementById('wishlist-add-submit'),
   wishlistAddCancel: document.getElementById('wishlist-add-cancel'),
   wishlistAddClose: document.getElementById('wishlist-add-close'),
+  wishlistImportBoothBtn: document.getElementById('wishlist-import-booth-btn'),
+  wishlistImportProgress: document.getElementById('wishlist-import-progress'),
 };
 
 // ========== Application State ==========
@@ -514,7 +542,7 @@ const state = {
   filteredAssets: [],
   currentCategory: '__ALL__',
   viewFilter: 'all',
-  sortMode: 'date_desc',
+  sortMode: loadSortModePreference(),
   viewMode: 'grid',
   searchQuery: '',
   avatarFilter: '',
@@ -641,6 +669,25 @@ function loadViewModePreference() {
   return 'grid';
 }
 
+function loadSortModePreference() {
+  const valid = ['date_desc', 'date_asc', 'name_asc', 'size_desc'];
+  try {
+    const raw = localStorage.getItem('assetSortMode');
+    if (valid.includes(raw)) return raw;
+  } catch {
+    // ignore
+  }
+  return 'date_desc';
+}
+
+function persistSortModePreference(mode) {
+  try {
+    localStorage.setItem('assetSortMode', mode);
+  } catch {
+    // ignore
+  }
+}
+
 function persistViewModePreference(mode) {
   try {
     localStorage.setItem('assetViewMode', mode === 'list' ? 'list' : 'grid');
@@ -723,6 +770,30 @@ function formatDate(raw) {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${y}.${m}.${day} ${hh}:${mm}`;
+}
+
+function formatWishlistCardPrice(asset) {
+  const min = Number(asset?.priceMin ?? asset?.price);
+  const max = Number(asset?.priceMax ?? asset?.price);
+  if (Number.isFinite(min) && min > 0 && Number.isFinite(max) && max > min) {
+    return `¥${Math.round(min).toLocaleString('ja-JP')}〜`;
+  }
+  const price = Number(asset?.price);
+  return Number.isFinite(price) && price > 0
+    ? `¥${Math.round(price).toLocaleString('ja-JP')}`
+    : '';
+}
+
+function createWishlistPriceChip(asset, compact = false) {
+  const text = formatWishlistCardPrice(asset);
+  if (!text) return null;
+  const chip = document.createElement('span');
+  chip.className = compact
+    ? 'text-[9px] px-1.5 py-0.5 rounded border border-pink-400/20 bg-pink-400/10 text-pink-200 font-mono-custom whitespace-nowrap'
+    : 'text-[10px] px-2 py-1 rounded-md border border-pink-400/20 bg-pink-400/10 text-pink-100 font-mono-custom self-start';
+  chip.textContent = text;
+  chip.title = `価格: ${text}`;
+  return chip;
 }
 
 function esc(text) {
@@ -1184,6 +1255,8 @@ function matchesSearch(asset, query) {
   if (getCategoryDisplayText(asset.primaryCategory, '').toLowerCase().includes(q)) return true;
   if ((asset.files || []).some((f) => (f.fileName || '').toLowerCase().includes(q))) return true;
   if ((asset.categories || []).some((c) => getCategoryDisplayText(c, '').toLowerCase().includes(q))) return true;
+  if ((asset.userTags || []).some((t) => String(t || '').toLowerCase().includes(q))) return true;
+  if ((asset.userNote || '').toLowerCase().includes(q)) return true;
   return false;
 }
 
@@ -1234,7 +1307,7 @@ function createAssetTile(asset) {
   if (previewSrc) {
     const img = document.createElement('img');
     img.src = previewSrc;
-    img.className = 'absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105';
+    img.className = 'absolute inset-0 booth-image-contain transition-transform group-hover:scale-105';
     img.loading = 'lazy';
     thumbWrapper.appendChild(img);
   } else {
@@ -1308,6 +1381,12 @@ function createAssetTile(asset) {
   title.title = asset.title || '無題';
   infoContainer.appendChild(title);
 
+  const isWishlistOnly = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
+  if (isWishlistOnly) {
+    const priceChip = createWishlistPriceChip(asset);
+    if (priceChip) infoContainer.appendChild(priceChip);
+  }
+
   const supportedAvatars = Array.isArray(asset.supportedAvatars) ? asset.supportedAvatars.filter(Boolean) : [];
   if (supportedAvatars.length) {
     const badgeRow = document.createElement('div');
@@ -1323,7 +1402,7 @@ function createAssetTile(asset) {
         badge.className = 'inline-block w-4 h-4 rounded-full overflow-hidden border border-white/15 flex-shrink-0';
         const imgEl = document.createElement('img');
         imgEl.src = imgUrl;
-        imgEl.className = 'w-full h-full object-cover';
+        imgEl.className = 'booth-image-contain';
         imgEl.alt = name;
         badge.appendChild(imgEl);
       } else {
@@ -1371,26 +1450,26 @@ function createAssetTile(asset) {
   const buttonRow = document.createElement('div');
   buttonRow.className = 'flex items-center justify-between gap-2';
 
-  const isWishlistOnly = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
-
-  const dlBtn = document.createElement('button');
-  if (isWishlistOnly) {
-    dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border border-pink-500/30 text-pink-400/60 transition cursor-default';
-    dlBtn.textContent = '未購入';
-    dlBtn.disabled = true;
-  } else {
-    dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition ${asset.downloaded
-      ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
-      : 'border-gray-700 hover:bg-white hover:text-black'}`;
-    dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
-  }
-
   const openBtn = document.createElement('button');
   openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-500 hover:text-white transition';
   openBtn.textContent = 'フォルダ';
 
-  buttonRow.appendChild(dlBtn);
-  buttonRow.appendChild(openBtn);
+  let dlBtn = null;
+  if (!isWishlistOnly) {
+    dlBtn = document.createElement('button');
+    dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition ${asset.downloaded
+      ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
+      : 'border-gray-700 hover:bg-white hover:text-black'}`;
+    dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
+    buttonRow.appendChild(dlBtn);
+  }
+
+  if (isWishlistOnly) {
+    const priceChip = createWishlistPriceChip(asset, true);
+    if (priceChip) buttonRow.appendChild(priceChip);
+  } else {
+    buttonRow.appendChild(openBtn);
+  }
 
   const progressWrapper = document.createElement('div');
   progressWrapper.className = 'progress-wrapper mt-2 opacity-0 transition-opacity duration-150';
@@ -1424,7 +1503,7 @@ function createAssetTile(asset) {
     openPreviewModal(asset);
   });
 
-  dlBtn.addEventListener('click', async (e) => {
+  dlBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     const latestAsset = getAssetByItemId(asset.itemId) || asset;
     const uiShowsImport = String(e.currentTarget?.textContent || '').trim().includes('インポート');
@@ -1531,7 +1610,7 @@ function createAssetListRow(asset) {
   if (asset.preview?.[0]) {
     const img = document.createElement('img');
     img.src = asset.preview[0];
-    img.className = 'w-full h-full object-cover';
+    img.className = 'booth-image-contain';
     img.loading = 'lazy';
     thumbCell.appendChild(img);
   } else {
@@ -1575,11 +1654,19 @@ function createAssetListRow(asset) {
 
   const actionTop = document.createElement('div');
   actionTop.className = 'flex items-center gap-1';
-  const dlBtn = document.createElement('button');
-  dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition rounded ${asset.downloaded
-    ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
-    : 'border-gray-700 hover:bg-white hover:text-black'}`;
-  dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
+
+  const isWishlistOnlyRow = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
+
+  let dlBtn = null;
+  if (!isWishlistOnlyRow) {
+    dlBtn = document.createElement('button');
+    dlBtn.className = `dl-btn text-[9px] px-2 py-1 border transition rounded ${asset.downloaded
+      ? 'border-blue-600 text-blue-300 hover:bg-blue-600/20'
+      : 'border-gray-700 hover:bg-white hover:text-black'}`;
+    dlBtn.textContent = asset.downloaded ? 'インポート' : 'ダウンロード';
+    actionTop.appendChild(dlBtn);
+  }
+
   const openBtn = document.createElement('button');
   openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-400 hover:text-white border border-gray-800 rounded';
   openBtn.textContent = 'Folder';
@@ -1588,9 +1675,13 @@ function createAssetListRow(asset) {
   statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded ? 'text-emerald-300' : 'text-gray-500')}`;
   statusEl.textContent = asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL');
 
-  actionTop.appendChild(dlBtn);
-  actionTop.appendChild(openBtn);
-  actionTop.appendChild(statusEl);
+  if (isWishlistOnlyRow) {
+    const priceChip = createWishlistPriceChip(asset, true);
+    if (priceChip) actionTop.appendChild(priceChip);
+  } else {
+    actionTop.appendChild(openBtn);
+    actionTop.appendChild(statusEl);
+  }
 
   const progressWrapper = document.createElement('div');
   progressWrapper.className = 'progress-wrapper opacity-0 transition-opacity duration-150';
@@ -1623,7 +1714,7 @@ function createAssetListRow(asset) {
     }
     openPreviewModal(asset);
   });
-  dlBtn.addEventListener('click', async (e) => {
+  dlBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     const latestAsset = getAssetByItemId(asset.itemId) || asset;
     const uiShowsImport = String(e.currentTarget?.textContent || '').trim().includes('インポート');
@@ -1752,8 +1843,11 @@ function setAssetsFromMap(data, options = {}) {
   refreshAvatarAliasLabels({ rerender: true }).catch((e) => {
     console.warn('[renderer] refreshAvatarAliasLabels failed:', e);
   });
-  buildCategoryOptions(state.allAssets);
+  buildCategoryOptions(state.allAssets.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded)));
   updateAnalyzeAvatarCompatBtn();
+  if (state.boothClient?.onAssetsLoaded) {
+    try { state.boothClient.onAssetsLoaded(state.allAssets); } catch {}
+  }
 }
 
 async function refreshAvatarAliasLabels(options = {}) {
@@ -3937,6 +4031,10 @@ function wireRendererModules() {
     setImportCloseDisabled,
     resetImportProgress,
     setAvatarFilterPanelOpen,
+    reloadAssetsMap,
+    updateUserMeta: window.boothAPI?.updateUserMeta
+      ? (itemId, patch) => window.boothAPI.updateUserMeta(itemId, patch)
+      : null,
     icons: ICONS,
     logger: window.logger,
   }));
@@ -4043,6 +4141,34 @@ function wireRendererModules() {
     isQueueLikelyActiveNow = queueUi.isQueueLikelyActiveNow;
     getLastQueueSettledAt = queueUi.getLastQueueSettledAt;
     safeBindRendererModule('queueUi', 'bindBoothApiEvents');
+  }
+
+  if (createBoothSearchView) {
+    try {
+      createBoothSearchView({
+        boothAPI: window.boothAPI,
+        toggleWishlist: async (itemId, itemIdOrUrl) => {
+          const res = await window.boothAPI.toggleWishlist(itemId, itemIdOrUrl || `https://booth.pm/ja/items/${itemId}`);
+          if (res?.ok) await reloadAssetsMap();
+          return res;
+        },
+        getAssetMap: () => state.assetByItemId || new Map(),
+      });
+    } catch (e) {
+      window.logger?.warn?.('[boothSearch] init failed', e?.message);
+    }
+  }
+
+  if (createBoothClientView) {
+    try {
+      const boothClient = createBoothClientView({
+        boothAPI: window.boothAPI,
+        getAssets: () => Array.isArray(state.allAssets) ? state.allAssets : [],
+      });
+      state.boothClient = boothClient;
+    } catch (e) {
+      window.logger?.warn?.('[boothClient] init failed', e?.message);
+    }
   }
 }
 

@@ -17,8 +17,8 @@
       --bg-main: #0a0a0c;
       --bg-panel: #111114;
       --bg-hover: #1c1c21;
-      --border-subtle: rgba(255,255,255,0.05);
-      --border-active: rgba(255,255,255,0.12);
+      --border-subtle: rgba(148,163,184,0.07);
+      --border-active: rgba(148,163,184,0.16);
       --accent: #3b82f6;
       --accent-glow: rgba(59,130,246,0.3);
       --text-main: #f4f4f5;
@@ -63,6 +63,8 @@
     .nav-item.active { background: rgba(59,130,246,.08); color: var(--accent); font-weight: 600; }
     .filter-btn { color: #71717a; background: transparent; font-weight: 500; }
     .filter-btn.active { color: #60a5fa; background: rgba(59,130,246,.10); font-weight: 700; }
+    .filter-count { font-size: 10px; font-family: 'JetBrains Mono', monospace; opacity: 0.5; margin-left: 4px; }
+    .filter-btn.active .filter-count { opacity: 0.8; }
     .sidebar-label { text-transform: uppercase; font-size: 9px; font-weight: 700; color: var(--text-mute); letter-spacing: .1em; margin-bottom: 8px; padding-left: 14px; }
     .detail-panel { width: 0; transition: width .3s cubic-bezier(.2,1,.2,1); overflow: hidden; border-left: 1px solid var(--border-subtle); background: #0e0e11; }
     .detail-panel.open { width: 360px; }
@@ -83,13 +85,53 @@
       border-color: rgba(59,130,246,.55);
       box-shadow: 0 0 0 2px rgba(59,130,246,.15);
     }
-    .panel-input { width: 100%; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.10); border-radius: 10px; padding: 10px 12px; font-size: 12px; color: #e4e4e7; transition: border-color 0.15s, box-shadow 0.15s; }
+    .panel-input { width: 100%; background: rgba(0,0,0,.35); border: 1px solid rgba(148,163,184,.10); border-radius: 10px; padding: 10px 12px; font-size: 12px; color: #e4e4e7; transition: border-color 0.15s, box-shadow 0.15s; }
     .panel-input:focus { outline: none; border-color: rgba(59,130,246,.55); box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
     .panel-label { font-size: 10px; color: #71717a; margin-bottom: 8px; display: block; letter-spacing: .02em; text-transform: uppercase; }
-    .modal-card { background: linear-gradient(180deg, #141519 0%, #0e0f14 100%); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; box-shadow: 0 32px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06); }
+    .modal-card { background: linear-gradient(180deg, #141519 0%, #0e0f14 100%); border: 1px solid rgba(148,163,184,.13); border-radius: 16px; box-shadow: 0 32px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(15,23,42,.55); }
+    /* Keep shared white-border utilities from reading as bright outlines on dark surfaces. */
+    .border-white\/15 { border-color: rgba(148,163,184,.14) !important; }
+    .border-white\/10 { border-color: rgba(148,163,184,.105) !important; }
+    .border-white\/8 { border-color: rgba(148,163,184,.085) !important; }
+    .border-white\/6 { border-color: rgba(148,163,184,.07) !important; }
+    .border-white\/5 { border-color: rgba(148,163,184,.055) !important; }
+    .wishlist-preview-mode { background: #050609 !important; }
+    .wishlist-preview-mode #modal-preview-box { background: #020307 !important; }
+    .booth-image-contain { width: 100%; height: 100%; object-fit: contain !important; }
+    .wishlist-preview-mode #modal-inspector-meta { padding: 24px; }
+    .wishlist-summary { margin-bottom: 18px; border: 1px solid rgba(236,72,153,.16); border-radius: 10px; background: rgba(236,72,153,.055); padding: 14px; }
+    .wishlist-summary-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .wishlist-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(236,72,153,.24); background: rgba(236,72,153,.12); color: #f9a8d4; border-radius: 999px; padding: 4px 9px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .wishlist-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .wishlist-summary-cell { min-width: 0; border: 1px solid rgba(148,163,184,.08); border-radius: 8px; background: rgba(0,0,0,.22); padding: 8px 9px; }
+    .wishlist-summary-label { color: #71717a; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .wishlist-summary-value { color: #e4e4e7; font-size: 12px; font-weight: 700; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wishlist-price-breakdown { margin-top: 10px; border: 1px solid rgba(148,163,184,.08); border-radius: 8px; background: rgba(0,0,0,.18); overflow: hidden; }
+    .wishlist-price-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 7px 9px; border-top: 1px solid rgba(148,163,184,.055); }
+    .wishlist-price-row:first-child { border-top: 0; }
+    .wishlist-price-name { min-width: 0; color: #d4d4d8; font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wishlist-price-value { color: #f9a8d4; font-size: 11px; font-weight: 800; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+    .wishlist-title-text { display: block; color: #f4f4f5 !important; font-size: 22px !important; font-weight: 800 !important; line-height: 1.25 !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+    .wishlist-author-text { display: block; color: #a1a1aa !important; font-size: 13px !important; margin-top: 6px; }
+    .wishlist-remove-danger { margin-top: 14px !important; padding: 10px 12px !important; border-radius: 8px !important; border-color: rgba(244,63,94,.32) !important; background: rgba(244,63,94,.08) !important; color: #fda4af !important; font-size: 11px !important; font-weight: 700 !important; }
     .queue-pill { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #d4d4d8; }
     .status-mini-btn { font-size: 10px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.10); color: #a1a1aa; background: transparent; transition: all .2s; }
     .status-mini-btn:hover { color: #e4e4e7; border-color: rgba(255,255,255,.20); background: rgba(255,255,255,.04); }
+    /* BOOTH mode switch */
+    .msbtn { font-size: 11px; font-weight: 600; padding: 5px 14px; border-radius: 7px; border: none; background: transparent; color: var(--text-mute); cursor: pointer; transition: all .2s; white-space: nowrap; font-family: inherit; }
+    .msbtn:hover { color: var(--text-dim); }
+    .ms-active-lib { background: #1d1d21; color: var(--text-main); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .ms-active-booth { background: linear-gradient(135deg,rgba(99,102,241,.2),rgba(139,92,246,.15)); color: #a5b4fc; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .ms-booth-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; border-radius: 8px; padding: 0 4px; background: rgba(236,72,153,.9); color: #fff; font-size: 9px; font-weight: 800; margin-left: 5px; vertical-align: middle; font-family: 'JetBrains Mono',monospace; }
+    /* BOOTH page */
+    #page-booth { display: none; flex: 1; flex-direction: column; overflow: hidden; background: #08080a; min-width: 0; }
+    .bview { display: none; flex: 1; flex-direction: column; overflow-y: auto; padding: 28px 36px; }
+    .bview::-webkit-scrollbar { width: 4px; } .bview::-webkit-scrollbar-track { background: transparent; } .bview::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+    .booth-section-title { font-size: 10px; font-weight: 700; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+    /* BOOTH sidebar */
+    #sb-booth { display: none; overflow-y: auto; }
+    #sb-booth .sb-sep { height: 1px; background: rgba(255,255,255,.05); margin: 8px 0; }
+    #sb-booth .sidebar-label { margin-top: 4px; }
     .settings-section { border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.02); padding: 12px; }
     .settings-section-title { font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
     #setting-shortcuts-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
@@ -338,19 +380,26 @@
 </head>
 <body class="app-container">
   <header class="bg-[#0a0a0c] border-b border-white/5 px-6 flex items-center justify-between z-50">
-    <div class="flex items-center gap-12">
+    <div class="flex items-center gap-4">
       <div class="flex items-center gap-3">
         <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/20">
           <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 8V21H3V8M23 3H1V8H23V3Z"/></svg>
         </div>
         <h1 class="text-[12px] font-black tracking-[0.2em] uppercase text-white">Ava<span class="text-blue-500">tool</span></h1>
       </div>
-      <nav class="flex items-center gap-1">
-        <button class="filter-btn active px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5" data-filter="all">すべて</button>
-        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="updated">更新あり</button>
-        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="wishlist">ほしい</button>
-        <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="removed">削除済み</button>
-      </nav>
+      <div style="display:flex;align-items:center;gap:3px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:3px;margin-left:8px;">
+        <button id="ms-lib" class="msbtn ms-active-lib">ライブラリ</button>
+        <button id="ms-booth" class="msbtn">BOOTH<span id="ms-booth-badge" class="ms-booth-badge" style="display:none"></span></button>
+      </div>
+      <div id="lib-filter-group" class="flex items-center gap-1">
+        <div class="w-px h-5 bg-white/10 mx-2"></div>
+        <nav class="flex items-center gap-1">
+          <button class="filter-btn active px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5" data-filter="all">すべて<span class="filter-count"></span></button>
+          <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="updated">更新あり<span class="filter-count"></span></button>
+          <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="wishlist">ほしい<span class="filter-count"></span></button>
+          <button class="filter-btn px-4 py-1.5 text-[11px] rounded-full transition-all hover:bg-white/5 text-zinc-500" data-filter="removed">削除済み<span class="filter-count"></span></button>
+        </nav>
+      </div>
     </div>
 
     <div class="flex items-center gap-4">
@@ -394,7 +443,7 @@
 
   <main class="flex overflow-hidden">
     <aside class="w-64 glass-sidebar border-r border-white/5 p-4 flex flex-col overflow-y-auto">
-      <div class="flex-1 space-y-8">
+      <div id="sb-lib" class="flex-1 space-y-8">
         <section>
           <div class="flex items-center justify-between mb-2 pr-2">
             <p class="sidebar-label !mb-0">Library</p>
@@ -418,6 +467,25 @@
           </div>
         </section>
       </div>
+      <div id="sb-booth">
+        <p class="sidebar-label">BOOTH</p>
+        <div class="space-y-0.5">
+          <button class="nav-item w-full sb-booth-nav" data-view="home">🏠 <span>ホーム</span></button>
+          <button class="nav-item w-full sb-booth-nav" data-view="search">🔍 <span>検索</span></button>
+        </div>
+        <div class="sb-sep"></div>
+        <p class="sidebar-label">ショッピング</p>
+        <div class="space-y-0.5">
+          <button class="nav-item w-full sb-booth-nav" data-view="cart">🛒 <span>カート</span></button>
+          <button class="nav-item w-full sb-booth-nav" data-view="wishlist">♥ <span>ほしいリスト</span></button>
+          <button class="nav-item w-full sb-booth-nav" data-view="orders">📦 <span>注文履歴</span></button>
+        </div>
+        <div class="sb-sep"></div>
+        <p class="sidebar-label">フォロー中ショップ</p>
+        <div id="sb-booth-shops" class="space-y-0.5">
+          <div style="font-size:10px;color:#52525b;padding:6px 14px;">読み込み中...</div>
+        </div>
+      </div>
       <div class="mt-auto pt-6 border-t border-white/5">
         <div class="p-3 bg-white/[0.02] border border-white/5 rounded-xl mb-4">
           <div class="flex justify-between items-center mb-2">
@@ -433,7 +501,7 @@
       </div>
     </aside>
 
-    <section class="flex-1 flex flex-col min-w-0 bg-[#08080a]">
+    <section id="page-lib" class="flex-1 flex flex-col min-w-0 bg-[#08080a]">
       <div class="px-8 py-5 flex items-center justify-between">
         <div class="relative w-full max-w-md">
           <input type="text" id="search-input" placeholder="アセットを検索..." class="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-sm focus:border-blue-500/50 outline-none transition-all">
@@ -456,8 +524,10 @@
             <span>通常モード</span>
           </span>
           <button id="btn-toggle-select" class="btn-action whitespace-nowrap shrink-0 !bg-blue-600/10 !text-blue-400 !border-blue-500/20 hover:!bg-blue-600/20">一括操作</button>
+          <button id="btn-booth-search" class="btn-action whitespace-nowrap shrink-0 !bg-violet-600/10 !text-violet-400 !border-violet-500/20 hover:!bg-violet-600/20">BOOTH検索</button>
         </div>
       </div>
+
       <div class="flex-1 overflow-y-auto p-8 pt-2">
         <div id="meta-progress-wrapper" class="hidden mb-6 p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl">
           <div class="flex justify-between items-center text-[10px] mb-2">
@@ -473,6 +543,53 @@
         <div id="asset-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6"></div>
       </div>
     </section>
+
+    <!-- BOOTH クライアント -->
+    <div id="page-booth">
+      <!-- ホーム -->
+      <div id="bview-home" class="bview" style="display:flex;">
+        <div class="booth-section-title">ダッシュボード</div>
+        <div id="booth-home-stats"></div>
+        <div class="booth-section-title">あなたにおすすめの商品</div>
+        <div id="booth-home-recommended" style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:18px;"></div>
+        <div class="booth-section-title">フォローしているショップの新着</div>
+        <div id="booth-home-following-new" style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:18px;"></div>
+        <div class="booth-section-title">最近の注文</div>
+        <div id="booth-home-recent" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px;"></div>
+        <div class="booth-section-title">ほしいリスト</div>
+        <div id="booth-home-wishlist-preview" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+        <div class="booth-section-title" style="margin-top:18px;">あなた向けBOOTHトップ</div>
+        <div id="booth-home-official" style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px;"></div>
+      </div>
+      <!-- カート -->
+      <div id="bview-cart" class="bview">
+        <div class="booth-section-title">カート</div>
+        <div id="booth-cart-content" style="flex:1;display:flex;flex-direction:column;"></div>
+      </div>
+      <!-- ほしいリスト -->
+      <div id="bview-wishlist" class="bview">
+        <div class="booth-section-title">ほしいリスト</div>
+        <div id="booth-wishlist-content" style="flex:1;"></div>
+      </div>
+      <!-- 注文履歴 -->
+      <div id="bview-orders" class="bview">
+        <div class="booth-section-title">注文履歴</div>
+        <div id="booth-orders-content" style="flex:1;"></div>
+      </div>
+      <!-- ショップ -->
+      <div id="bview-shop" class="bview" style="flex-direction:column;gap:0;">
+        <div style="display:flex;align-items:center;gap:10px;padding:0 0 18px 0;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:18px;flex-shrink:0;">
+          <button id="bview-shop-back" style="font-size:11px;padding:5px 12px;border-radius:7px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#71717a;cursor:pointer;font-family:inherit;">← 戻る</button>
+          <span id="bview-shop-name" style="font-size:14px;font-weight:700;color:#f4f4f5;"></span>
+          <span id="bview-shop-count" style="font-size:11px;color:#52525b;margin-left:4px;"></span>
+        </div>
+        <div id="bview-shop-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;align-content:start;align-items:start;"></div>
+        <div id="bview-shop-more" style="display:none;text-align:center;padding:16px 0;flex-shrink:0;">
+          <button id="bview-shop-more-btn" style="font-size:11px;font-weight:600;padding:8px 24px;border-radius:8px;border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.08);color:#818cf8;cursor:pointer;font-family:inherit;">もっと見る</button>
+        </div>
+      </div>
+    </div>
+
     <aside id="detail-panel" class="detail-panel"></aside>
   </main>
 
@@ -538,7 +655,7 @@
         </button>
         <div class="flex-1 min-w-0 flex items-center gap-1.5 px-1">
           <span id="modal-title" class="text-[12px] font-semibold text-zinc-200 truncate"></span>
-          <span class="text-zinc-700 text-[11px] shrink-0">/</span>
+          <span id="modal-path-sep" class="text-zinc-700 text-[11px] shrink-0">/</span>
           <span id="modal-path" class="text-[10px] text-zinc-600 truncate"></span>
         </div>
         <div id="modal-review-controls" class="hidden flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/8 px-2 py-1 text-[10px] text-amber-100 shrink-0">
@@ -564,7 +681,7 @@
       <div class="flex flex-1 min-h-0 overflow-hidden">
 
         <!-- サイドバー（ツリー） -->
-        <div class="w-44 border-r border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
+        <div id="modal-tree-panel" class="w-44 border-r border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
           <div class="px-3 pt-3 pb-1 text-[9px] font-bold tracking-[0.12em] text-zinc-600 uppercase shrink-0">フォルダ</div>
           <div id="modal-tree" class="flex-1 overflow-y-auto px-1.5 pb-2"></div>
           <div class="px-3 py-2 border-t border-white/5 shrink-0">
@@ -573,19 +690,44 @@
         </div>
 
         <!-- ファイルグリッド -->
-        <div class="flex-1 min-w-0 overflow-y-auto p-4">
+        <div id="modal-file-panel" class="flex-1 min-w-0 overflow-y-auto p-4">
           <div id="modal-file-grid" class="grid grid-cols-3 xl:grid-cols-4 gap-3"></div>
         </div>
 
         <!-- インスペクター -->
-        <div class="w-64 border-l border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
+        <div id="modal-inspector-panel" class="w-64 border-l border-white/8 flex flex-col shrink-0 overflow-hidden" style="background:#040407">
           <div id="modal-preview-box" class="shrink-0 h-52 flex items-center justify-center overflow-hidden border-b border-white/8" style="background:#020204"></div>
-          <div class="px-4 py-3 border-b border-white/6 shrink-0">
+          <div id="modal-inspector-filemeta" class="px-4 py-3 border-b border-white/6 shrink-0">
             <div id="modal-preview-filename" class="text-[12px] font-semibold text-zinc-100 truncate" title=""></div>
             <div id="modal-preview-info" class="text-[10px] text-zinc-500 mt-0.5 truncate"></div>
           </div>
           <div id="modal-file-actions" class="px-4 py-2 border-b border-white/5 shrink-0 empty:hidden"></div>
-          <div class="flex-1 overflow-y-auto px-4 py-3">
+          <div id="modal-inspector-meta" class="flex-1 overflow-y-auto px-4 py-3">
+            <!-- アイテム情報・ユーザーメモ -->
+              <div id="modal-wishlist-summary" class="wishlist-summary hidden"></div>
+            <div id="asset-user-meta" class="mb-3">
+              <div class="flex items-center gap-1 mb-0.5">
+                <span id="modal-asset-title-text" class="text-[11px] text-zinc-300 truncate flex-1"></span>
+                <button id="modal-copy-title" class="shrink-0 text-[8px] text-zinc-600 hover:text-zinc-200 px-1.5 py-0.5 rounded transition-colors leading-none" title="タイトルをコピー">コピー</button>
+              </div>
+              <div class="flex items-center gap-1 mb-2.5">
+                <span id="modal-asset-author-text" class="text-[10px] text-zinc-500 truncate flex-1"></span>
+                <button id="modal-copy-author" class="shrink-0 text-[8px] text-zinc-600 hover:text-zinc-200 px-1.5 py-0.5 rounded transition-colors leading-none" title="作者名をコピー">コピー</button>
+              </div>
+              <div id="modal-user-tags-list" class="flex flex-wrap gap-1 mb-1.5 min-h-[4px]"></div>
+              <div class="flex gap-1 mb-2">
+                <input id="modal-user-tag-input" type="text" class="flex-1 text-[10px] bg-black/30 border border-white/10 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 outline-none focus:border-white/25" placeholder="タグを追加..." maxlength="40" autocomplete="off">
+                <button id="modal-user-tag-add" class="shrink-0 text-[10px] px-2 py-1 rounded border border-white/10 bg-white/4 hover:bg-white/10 text-zinc-400 hover:text-zinc-200 transition-colors">+</button>
+              </div>
+              <textarea id="modal-user-note" class="w-full text-[10px] bg-black/30 border border-white/10 rounded px-2 py-1.5 text-zinc-300 placeholder-zinc-700 resize-none outline-none focus:border-white/25" rows="3" placeholder="メモ..."></textarea>
+              <div id="modal-user-note-status" class="text-[9px] text-zinc-600 mt-0.5 h-3"></div>
+              <div id="modal-wishlist-cart-wrap" class="hidden mt-2 flex gap-1.5">
+                <button id="modal-wishlist-cart-btn" class="flex-1 text-[10px] px-2 py-1 rounded border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 transition-colors">カートへ</button>
+                <button id="modal-wishlist-buy-btn" class="flex-1 text-[10px] px-2 py-1 rounded border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 transition-colors">購入する</button>
+              </div>
+              <button id="modal-wishlist-remove-btn" class="hidden mt-2 w-full text-[10px] px-2 py-1 rounded border border-pink-500/30 text-pink-400 hover:bg-pink-500/10 transition-colors">ほしいリストから外す</button>
+              <div class="border-t border-white/5 mt-2 mb-2"></div>
+            </div>
             <div id="asset-avatar-analysis" class="mb-3 text-[10px] text-zinc-500"></div>
             <div id="asset-import-history" class="text-[10px] text-zinc-500 space-y-1"></div>
           </div>
@@ -686,7 +828,7 @@
         <div id="manual-add-status" class="text-[10px] text-zinc-400 mb-2"></div>
         <button id="manual-add-preview" class="btn-action mb-3">確認</button>
         <div id="manual-add-preview-box" class="hidden border border-white/10 rounded-xl p-3 mb-3 bg-black/20">
-          <img id="manual-add-preview-image" class="w-24 h-24 object-cover rounded mb-2" alt="">
+          <img id="manual-add-preview-image" class="w-24 h-24 object-contain rounded mb-2 bg-black/30" alt="">
           <div id="manual-add-preview-id" class="text-[10px] text-zinc-500"></div>
           <div id="manual-add-preview-title" class="text-[11px] text-zinc-200"></div>
           <div id="manual-add-preview-author" class="text-[10px] text-zinc-400"></div>
@@ -702,23 +844,53 @@
   </div>
 
   <div id="wishlist-add-modal" class="hidden fixed inset-0 z-[93] bg-black/80 p-4 items-center justify-center">
-    <div class="w-full max-w-xl max-h-[86vh] mx-auto modal-card p-4 overflow-hidden flex flex-col">
-      <div class="text-sm font-bold mb-3">ほしいリストに追加</div>
-      <div class="overflow-y-auto pr-1">
-        <input id="wishlist-add-input" type="text" class="panel-input mb-2" placeholder="BOOTHのURLまたはID">
-        <div id="wishlist-add-status" class="text-[10px] text-zinc-400 mb-2"></div>
-        <button id="wishlist-add-preview" class="btn-action mb-3">確認</button>
-        <div id="wishlist-add-preview-box" class="hidden border border-white/10 rounded-xl p-3 mb-3 bg-black/20">
-          <img id="wishlist-add-preview-image" class="w-24 h-24 object-cover rounded mb-2" alt="">
-          <div id="wishlist-add-preview-id" class="text-[10px] text-zinc-500"></div>
-          <div id="wishlist-add-preview-title" class="text-[11px] text-zinc-200"></div>
-          <div id="wishlist-add-preview-author" class="text-[10px] text-zinc-400"></div>
+    <div class="w-full max-w-2xl max-h-[86vh] mx-auto modal-card overflow-hidden flex flex-col">
+      <div class="flex items-start justify-between gap-4 px-5 py-4 border-b border-white/10 shrink-0">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-zinc-100">ほしいリストに追加</div>
+          <div class="text-[11px] text-zinc-500 mt-1">BOOTH の商品URLまたは商品IDから、未購入アイテムを登録します。</div>
+        </div>
+        <button id="wishlist-add-close" class="icon-btn shrink-0" title="閉じる" aria-label="閉じる">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto px-5 py-4 space-y-4">
+        <div class="rounded-lg border border-white/8 bg-black/20 px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <div class="text-[11px] font-semibold text-zinc-300">BOOTHほしいリストからインポート</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">accounts.booth.pm のほしいリストを一括取得します</div>
+          </div>
+          <button id="wishlist-import-booth-btn" class="btn-action shrink-0 !px-3 !py-1.5 text-[11px]">インポート</button>
+        </div>
+        <div id="wishlist-import-progress" class="hidden rounded-lg border border-white/8 bg-black/20 px-4 py-3 text-[11px] text-zinc-400"></div>
+        <div class="space-y-2">
+          <label for="wishlist-add-input" class="block text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">BOOTH URL / ID</label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input id="wishlist-add-input" type="text" class="panel-input flex-1" placeholder="https://booth.pm/ja/items/1234567">
+            <button id="wishlist-add-preview" class="btn-action justify-center sm:w-24 disabled:opacity-30 disabled:cursor-not-allowed">確認</button>
+          </div>
+          <div id="wishlist-add-status" class="min-h-5 rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-zinc-500" aria-live="polite">URLまたはIDを入力すると自動で内容を確認します。</div>
+        </div>
+        <div id="wishlist-add-preview-box" class="hidden overflow-hidden rounded-lg border border-white/10 bg-black/25">
+          <div class="flex gap-4 p-4">
+            <div class="w-28 h-28 shrink-0 rounded-lg border border-white/10 bg-black/35 overflow-hidden flex items-center justify-center">
+              <img id="wishlist-add-preview-image" class="hidden w-full h-full object-contain" alt="">
+              <span class="text-[10px] text-zinc-700">No Image</span>
+            </div>
+            <div class="min-w-0 flex-1 py-0.5">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-[9px] px-2 py-0.5 rounded-full border border-pink-400/20 bg-pink-400/10 text-pink-200">ほしい</span>
+                <span id="wishlist-add-preview-id" class="text-[10px] text-zinc-500 truncate"></span>
+              </div>
+              <div id="wishlist-add-preview-title" class="text-[13px] font-semibold text-zinc-100 leading-snug line-clamp-2"></div>
+              <div id="wishlist-add-preview-author" class="mt-1 text-[11px] text-zinc-400 truncate"></div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="flex gap-2">
-        <button id="wishlist-add-submit" class="btn-action btn-primary">追加</button>
+      <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10 shrink-0 bg-black/15">
         <button id="wishlist-add-cancel" class="btn-action">キャンセル</button>
-        <button id="wishlist-add-close" class="btn-action">閉じる</button>
+        <button id="wishlist-add-submit" class="btn-action btn-primary disabled:opacity-30 disabled:cursor-not-allowed" disabled>追加</button>
       </div>
     </div>
   </div>
@@ -1197,6 +1369,122 @@
   <script src="./renderer/render_library_actions.js"></script>
   <script src="./renderer/render_asset_list.js"></script>
   <script src="./renderer/render_queue_ui.js"></script>
+  <script src="./renderer/render_booth_search.js"></script>
+  <script src="./renderer/render_booth_client.js"></script>
   <script src="./render.js"></script>
+
+  <!-- BOOTH検索モーダル（全画面オーバーレイ） -->
+  <div id="booth-search-modal" style="display:none;position:fixed;inset:0;z-index:50;flex-direction:column;background:#09090b">
+    <!-- ヘッダー 1行目: 検索入力 -->
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 20px 8px;flex-shrink:0;background:#0d0d10">
+      <span style="font-size:11px;font-weight:600;color:#a78bfa;white-space:nowrap;letter-spacing:.04em;flex-shrink:0">BOOTH</span>
+      <div style="width:1px;height:16px;background:rgba(255,255,255,0.08);flex-shrink:0"></div>
+      <input id="booth-search-input" type="text" placeholder="アイテム名・作者名・タグで検索..."
+        style="flex:1;min-width:0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:7px 14px;font-size:13px;color:#f4f4f5;outline:none;font-family:inherit;transition:border-color .15s"
+        onfocus="this.style.borderColor='rgba(167,139,250,0.5)'" onblur="this.style.borderColor='rgba(255,255,255,0.08)'">
+      <button id="btn-booth-search-submit"
+        style="flex-shrink:0;padding:7px 16px;border-radius:8px;border:1px solid rgba(139,92,246,0.35);background:rgba(139,92,246,0.12);color:#c4b5fd;font-size:12px;cursor:pointer;font-family:inherit"
+        onmouseover="this.style.background='rgba(139,92,246,0.22)'" onmouseout="this.style.background='rgba(139,92,246,0.12)'">検索</button>
+      <button id="btn-booth-search-close"
+        style="flex-shrink:0;padding:7px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:none;color:#71717a;font-size:12px;cursor:pointer;font-family:inherit"
+        onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='none'">✕ 閉じる</button>
+    </div>
+    <!-- ヘッダー 2行目: フィルター -->
+    <div style="display:flex;align-items:center;gap:8px;padding:0 20px 10px;flex-shrink:0;background:#0d0d10;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <select id="booth-search-category" style="background:#111113;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:5px 8px;font-size:11px;color:#a1a1aa;outline:none;cursor:pointer;font-family:inherit">
+        <option value="">すべてのカテゴリ</option>
+        <option value="208">3Dキャラクター</option>
+        <option value="209">3D衣装</option>
+        <option value="230">3D髪型</option>
+        <option value="214">3Dテクスチャ</option>
+        <option value="217">3D装飾品</option>
+        <option value="210">3D小道具</option>
+        <option value="215">3Dツール・システム</option>
+      </select>
+      <select id="booth-search-price" style="background:#111113;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:5px 8px;font-size:11px;color:#a1a1aa;outline:none;cursor:pointer;font-family:inherit">
+        <option value="">全価格帯</option>
+        <option value="0-0">無料</option>
+        <option value="0-500">〜¥500</option>
+        <option value="0-1000">〜¥1,000</option>
+        <option value="0-3000">〜¥3,000</option>
+        <option value="3000-">¥3,000〜</option>
+      </select>
+      <select id="booth-search-sort" style="background:#111113;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:5px 8px;font-size:11px;color:#a1a1aa;outline:none;cursor:pointer;font-family:inherit">
+        <option value="new_arrivals">新着順</option>
+        <option value="date_desc">更新日順</option>
+        <option value="popularity_desc">人気順</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#71717a;cursor:pointer;user-select:none">
+        <input type="checkbox" id="booth-search-instock" checked style="accent-color:#8b5cf6;cursor:pointer">
+        在庫あり
+      </label>
+    </div>
+    <!-- ステータス行 -->
+    <div id="booth-search-status" style="display:none;padding:5px 20px;font-size:11px;color:#52525b;border-bottom:1px solid rgba(255,255,255,0.04);flex-shrink:0"></div>
+    <!-- グリッドエリア -->
+    <div style="flex:1;overflow-y:auto;padding:20px;position:relative">
+      <div id="booth-search-empty" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#27272a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <div style="font-size:13px;font-weight:500;color:#3f3f46">BOOTH を検索</div>
+        <div style="font-size:11px;color:#27272a">キーワードを入力して Enter または「検索」</div>
+      </div>
+      <div id="booth-search-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4"></div>
+      <div id="booth-search-pagination" class="hidden mt-6 flex items-center justify-center gap-2 pb-4">
+        <button id="btn-booth-prev"
+          style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:#a1a1aa;font-size:13px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s"
+          onmouseover="if(!this.disabled)this.style.background='rgba(255,255,255,0.09)';if(!this.disabled)this.style.color='#e4e4e7'"
+          onmouseout="if(!this.disabled)this.style.background='rgba(255,255,255,0.04)';if(!this.disabled)this.style.color='#a1a1aa'">
+          ←
+        </button>
+        <div id="booth-page-buttons" style="display:flex;gap:4px"></div>
+        <button id="btn-booth-next"
+          style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:#a1a1aa;font-size:13px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s"
+          onmouseover="if(!this.disabled)this.style.background='rgba(255,255,255,0.09)';if(!this.disabled)this.style.color='#e4e4e7'"
+          onmouseout="if(!this.disabled)this.style.background='rgba(255,255,255,0.04)';if(!this.disabled)this.style.color='#a1a1aa'">
+          →
+        </button>
+      </div>
+    </div>
+
+    <!-- BOOTH アイテム詳細パネル（モーダル内右ドロワー） -->
+    <div id="booth-item-detail" style="display:none;position:absolute;inset:0;z-index:10;align-items:stretch;justify-content:flex-end;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)">
+      <div style="width:min(980px, calc(100vw - 96px));max-width:980px;background:#0e0e12;border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.5);overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid rgba(255,255,255,0.05);flex-shrink:0">
+          <span id="booth-detail-shop" style="font-size:11px;color:#71717a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <button id="btn-booth-detail-close" style="color:#71717a;font-size:18px;line-height:1;margin-left:16px;flex-shrink:0;background:none;border:none;cursor:pointer" onmouseover="this.style.color='#d4d4d8'" onmouseout="this.style.color='#71717a'">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto">
+          <div style="display:flex;gap:0;padding:24px 28px 18px;align-items:flex-start">
+            <div style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
+              <div style="position:relative;width:320px;height:320px;border-radius:10px;overflow:hidden;background:#09090b">
+                <img id="booth-detail-image" src="" alt="" style="width:100%;height:100%;object-fit:contain">
+                <button id="btn-booth-detail-prev-img" style="display:none;position:absolute;left:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.68);color:#fff;font-size:22px;border:1px solid rgba(255,255,255,0.16);cursor:pointer">‹</button>
+                <button id="btn-booth-detail-next-img" style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.68);color:#fff;font-size:22px;border:1px solid rgba(255,255,255,0.16);cursor:pointer">›</button>
+                <div id="booth-detail-img-dots" style="position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:3px"></div>
+              </div>
+              <div id="booth-detail-img-thumbs" style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;max-height:104px;overflow-y:auto"></div>
+            </div>
+            <div style="flex:1;padding-left:22px;display:flex;flex-direction:column;gap:10px;min-width:0">
+              <div id="booth-detail-title" style="font-size:16px;font-weight:800;color:#f4f4f5;line-height:1.45"></div>
+              <div id="booth-detail-stats" style="font-size:10px;color:#52525b"></div>
+              <div id="booth-detail-variations" style="display:flex;flex-direction:column;gap:4px"></div>
+            </div>
+          </div>
+          <div style="padding:0 28px 24px;display:flex;flex-direction:column;gap:14px;border-top:1px solid rgba(255,255,255,0.05)">
+            <div id="booth-detail-tags" style="display:flex;flex-wrap:wrap;gap:6px;padding-top:12px"></div>
+            <div>
+              <div style="font-size:10px;color:#52525b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">説明</div>
+              <pre id="booth-detail-desc" style="font-size:12px;color:#a1a1aa;line-height:1.7;white-space:pre-wrap;font-family:inherit;overflow-y:auto;max-height:340px;margin:0"></pre>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;padding:14px 24px;border-top:1px solid rgba(255,255,255,0.05);flex-shrink:0">
+          <button id="btn-booth-detail-wish" style="flex:1;padding:8px;border-radius:6px;border:1px solid rgba(167,139,250,0.35);color:#c4b5fd;font-size:11px;background:none;cursor:pointer;font-family:inherit" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='none'">ほしいリストに追加</button>
+          <button id="btn-booth-detail-open" style="padding:8px 16px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);color:#a1a1aa;font-size:11px;background:none;cursor:pointer;font-family:inherit" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='none'">BOOTHで開く</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

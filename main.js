@@ -55,10 +55,13 @@ const {
   learnAvatarsToFile,
   syncAvatarItemsToFile,
   fixAvatarItemFields,
+  fetchItemPricePublic,
   _test: {
     enrichItemAvatarMetadata,
   },
 } = require('./lib/booth_meta_fetcher');
+const { runWishlistPriceCheck } = require('./lib/wishlist_price_checker');
+const { searchBoothItems, fetchBoothItemDetail, fetchBoothHomeSections, fetchBoothRelatedItems } = require('./lib/booth_search');
 let electronAutoUpdater = null;
 try {
   ({ autoUpdater: electronAutoUpdater } = require('electron-updater'));
@@ -620,16 +623,41 @@ function emitAutoBootstrapStatus(payload) {
   sender.send('auto-bootstrap-status', payload);
 }
 
-function showDesktopNotification(title, body) {
+function showDesktopNotification(title, body, imageUrl) {
   try {
     const supported = Boolean(Notification && Notification.isSupported?.());
     console.log('[NOTIFY][main]', `supported=${supported}`, String(title || ''), String(body || ''));
     if (!supported) return false;
-    const n = new Notification({
+    const opts = {
       title: String(title || 'Avatool'),
       body: String(body || ''),
       silent: false,
-    });
+    };
+    let imgSrc = null;
+    if (typeof imageUrl === 'string' && imageUrl) {
+      if (imageUrl.startsWith('https://')) {
+        imgSrc = imageUrl;
+      } else if (imageUrl.startsWith('file:///')) {
+        imgSrc = imageUrl;
+      } else if (imageUrl.length > 0) {
+        // ローカルファイルパスを file:// URI に変換
+        imgSrc = 'file:///' + imageUrl.replace(/\\/g, '/');
+      }
+    }
+    if (imgSrc && process.platform === 'win32') {
+      const esc = (s) => String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      opts.toastXml = [
+        '<toast duration="long">',
+        '<visual><binding template="ToastGeneric">',
+        `<text>${esc(opts.title)}</text>`,
+        `<text>${esc(opts.body)}</text>`,
+        `<image src="${esc(imgSrc)}"/>`,
+        '</binding></visual>',
+        '</toast>',
+      ].join('');
+    }
+    const n = new Notification(opts);
     n.show();
     return true;
   } catch (e) {
@@ -1072,6 +1100,207 @@ async function resolveWishlistCandidate(rawInput) {
 
   const item = metaMgr.createWishlistMetaItem(itemId, itemJson);
   return { ok: true, itemId, itemJson, item };
+}
+
+async function importBoothWishlist({ onProgress } = {}) {
+  await ensureClientReady();
+
+  // Use the JSON API: https://accounts.booth.pm/wish_lists.json
+  // Returns { item_ids: [...], wishlists_counts: {...} }
+  let allItemIds = [];
+  try {
+    const res = await boothClient.get('https://accounts.booth.pm/wish_lists.json', {
+      baseURL: 'https://accounts.booth.pm',
+      responseType: 'json',
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    const data = res?.data;
+    if (Array.isArray(data?.item_ids)) {
+      allItemIds = data.item_ids.map((id) => String(id));
+    }
+  } catch (e) {
+    return { error: `fetch_failed: ${e?.message || String(e)}` };
+  }
+
+  if (allItemIds.length === 0) return { ok: true, imported: 0, skipped: 0, total: 0 };
+
+  // Load existing meta to find already-registered items
+  let meta = [];
+  if (fs.existsSync(META_PATH)) {
+    try { meta = JSON.parse(fs.readFileSync(META_PATH, 'utf8')); } catch { meta = []; }
+    if (!Array.isArray(meta)) meta = [];
+  }
+  const existingIds = new Set(meta.map((m) => String(m?.itemId || '')));
+
+  const toImport = allItemIds.filter((id) => !existingIds.has(id));
+  const skipped = allItemIds.length - toImport.length;
+
+  let imported = 0;
+  const errors = [];
+  for (let i = 0; i < toImport.length; i++) {
+    const itemId = toImport[i];
+    onProgress?.({ done: i, total: toImport.length, itemId });
+    try {
+      const resolved = await resolveWishlistCandidate(itemId);
+      if (resolved?.error) { errors.push({ itemId, error: resolved.error }); continue; }
+      meta = dedupeMetaItemsByItemId([...meta, resolved.item]);
+      imported++;
+    } catch (e) {
+      errors.push({ itemId, error: e?.message || String(e) });
+    }
+    // gentle throttle
+    await new Promise((r) => setTimeout(r, 800 + Math.random() * 600));
+  }
+
+  if (imported > 0) {
+    writeMetaFile(meta);
+  }
+
+  return { ok: true, imported, skipped, total: allItemIds.length, errors };
+}
+
+function extractBoothCsrfFromHtml(html) {
+  const $ = cheerio.load(String(html || ''));
+  return String(
+    $('meta[name="csrf-token"]').attr('content') ||
+    $('input[name="authenticity_token"]').first().attr('value') ||
+    '',
+  ).trim();
+}
+
+async function addWishlistItemToBoothCart(rawInput, variationName) {
+  await ensureClientReady();
+  const itemId = extractBoothItemId(rawInput);
+  if (!itemId) return { error: 'invalid_item_id_or_url' };
+
+  // Fetch JSON (variation IDs + shop subdomain) and HTML (CSRF token) in parallel
+  let jsonData, csrfToken;
+  try {
+    const [jsonRes, htmlRes] = await Promise.all([
+      boothClient.get(`/ja/items/${itemId}.json`, {
+        baseURL: 'https://booth.pm',
+        responseType: 'json',
+        headers: { Accept: 'application/json' },
+      }),
+      boothClient.get(`/ja/items/${itemId}`, {
+        baseURL: 'https://booth.pm',
+        responseType: 'text',
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: 'https://booth.pm/' },
+      }),
+    ]);
+    jsonData = jsonRes?.data;
+    csrfToken = extractBoothCsrfFromHtml(String(htmlRes?.data || ''));
+  } catch (e) {
+    return { error: `item_fetch_failed: ${e?.message || String(e)}` };
+  }
+
+  if (!csrfToken) return { error: 'cart_authenticity_token_not_found' };
+
+  const shopSubdomain = String(jsonData?.shop?.subdomain || '').trim();
+  if (!shopSubdomain) return { error: 'cart_shop_not_found' };
+
+  const variations = (Array.isArray(jsonData?.variations) ? jsonData.variations : [])
+    .map((v) => ({ id: String(v?.id || ''), name: String(v?.name || '').trim() }))
+    .filter((v) => v.id);
+
+  let resolvedVariationId = variations.length === 1 ? variations[0].id : '';
+  if (!resolvedVariationId && variationName && variations.length > 0) {
+    const needle = String(variationName).trim().toLowerCase();
+    const match = variations.find((v) => v.name.toLowerCase() === needle)
+      || variations.find((v) => v.name.toLowerCase().includes(needle))
+      || variations.find((v) => needle.includes(v.name.toLowerCase()));
+    if (match) resolvedVariationId = match.id;
+  }
+
+  if (!resolvedVariationId) {
+    return {
+      error: variations.length > 1 ? 'cart_variation_ambiguous' : 'cart_variation_not_found',
+      variationCount: variations.length,
+      variations,
+    };
+  }
+
+  const cartUrl = new URL(`https://${shopSubdomain}.booth.pm/cart`);
+  cartUrl.searchParams.set('added_to_cart', 'true');
+  cartUrl.searchParams.set('via', 'market');
+
+  const body = new URLSearchParams();
+  body.set('_method', 'patch');
+  body.set('cart_item[variation_id]', resolvedVariationId);
+  body.set('authenticity_token', csrfToken);
+
+  let cartPageHtml = '';
+  try {
+    const postRes = await boothClient.post(cartUrl.toString(), body.toString(), {
+      responseType: 'text',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Origin: 'https://booth.pm',
+        Referer: 'https://booth.pm/',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    cartPageHtml = String(postRes?.data || '');
+  } catch (e) {
+    const status = e?.response?.status || null;
+    return { error: `cart_add_failed${status ? `:${status}` : ''}: ${e?.message || String(e)}` };
+  }
+
+  // Extract checkout URL from the cart page response
+  // Pattern: href="https://checkout.booth.pm/checkout/step1?uuid=UUID"
+  let checkoutUrl = null;
+  const checkoutMatch = /https:\/\/checkout\.booth\.pm\/checkout\/step1\?uuid=[a-f0-9-]+[^"'\s]*/i.exec(cartPageHtml);
+  if (checkoutMatch) {
+    checkoutUrl = checkoutMatch[0];
+  }
+
+  // Fallback: fetch cart.json to get checkout URL
+  if (!checkoutUrl) {
+    try {
+      const cartBase = new URL(cartUrl.toString());
+      cartBase.pathname = '/cart.json';
+      cartBase.search = '';
+      const cartJson = await boothClient.get(cartBase.toString(), {
+        responseType: 'json',
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', Referer: cartUrl.toString() },
+      });
+      const cartData = cartJson?.data;
+      const checkoutPath =
+        cartData?.carts?.[0]?.shop?.checkout_url ||
+        cartData?.carts?.[0]?.shop?.checkout_path ||
+        cartData?.carts?.[0]?.checkout_url ||
+        cartData?.carts?.[0]?.checkout_path ||
+        cartData?.checkout_url ||
+        cartData?.checkout_path ||
+        '';
+      if (checkoutPath) {
+        checkoutUrl = checkoutPath.startsWith('http') ? checkoutPath : `https://checkout.booth.pm${checkoutPath}`;
+      }
+    } catch { /* ignore */ }
+  }
+
+  return {
+    ok: true,
+    itemId,
+    variationId: resolvedVariationId,
+    cartUrl: cartUrl.toString(),
+    checkoutUrl,
+  };
+}
+
+async function fetchBoothCart(shopSubdomain) {
+  await ensureClientReady();
+  const subdomain = String(shopSubdomain || '').trim();
+  if (!subdomain) return { error: 'subdomain_required' };
+  try {
+    const res = await boothClient.get(`https://${subdomain}.booth.pm/cart.json`, {
+      responseType: 'json',
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    return { ok: true, data: res?.data };
+  } catch (e) {
+    return { error: `cart_fetch_failed: ${e?.message || String(e)}` };
+  }
 }
 
 function applyVersionTrackingKeepingManual(existingMeta, latestMeta, detectedAt = new Date().toISOString()) {
@@ -2215,6 +2444,9 @@ registerIpcHandlers({
   createManualFreeMetaItem,
   resolveManualFreeAssetCandidate,
   resolveWishlistCandidate,
+  importBoothWishlist,
+  addWishlistItemToBoothCart,
+  fetchBoothCart,
   toBoothCategoryRowsFromItemJson,
   parseAutoBootstrapChoiceKey,
   listAutoBootstrapVariantOptions,
@@ -2251,6 +2483,14 @@ registerIpcHandlers({
   META_PATH,
   VCC_SETTINGS_PATH,
   writeMetaFile,
+  fetchItemPricePublic,
+  searchBoothItems,
+  fetchBoothItemDetail,
+  fetchBoothHomeSections,
+  fetchBoothRelatedItems,
+  runWishlistPriceCheck,
+  showDesktopNotification,
+  Notification,
   normalizeAndPersistMeta,
   dedupeMetaItemsByItemId,
   generateFilesHash,

@@ -114,6 +114,15 @@ contextBridge.exposeInMainWorld('boothAPI', {
   addManualFreeAsset: (itemIdOrUrl) => ipcRenderer.invoke('add-manual-free-asset', { itemIdOrUrl }),
   previewWishlistItem: (itemIdOrUrl) => ipcRenderer.invoke('preview-wishlist-item', { itemIdOrUrl }),
   toggleWishlist: (itemId, itemIdOrUrl) => ipcRenderer.invoke('toggle-wishlist', { itemId, itemIdOrUrl }),
+  addWishlistItemToCart: (itemIdOrUrl, variationName) => ipcRenderer.invoke('add-wishlist-item-to-cart', { itemIdOrUrl, variationName }),
+  fetchBoothCart: (shopSubdomain) => ipcRenderer.invoke('get-booth-cart', { shopSubdomain }),
+  importBoothWishlist: () => ipcRenderer.invoke('import-booth-wishlist'),
+  searchBooth: (query, opts = {}) => ipcRenderer.invoke('search-booth', { query, ...opts }),
+  fetchBoothItemDetail: (itemId) => ipcRenderer.invoke('fetch-booth-item-detail', { itemId }),
+  fetchBoothHome: (opts = {}) => ipcRenderer.invoke('fetch-booth-home', opts),
+  fetchBoothRelatedItems: (itemId, opts = {}) => ipcRenderer.invoke('fetch-booth-related-items', { itemId, ...opts }),
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),
+  updateUserMeta: (itemId, patch) => ipcRenderer.invoke('update-user-meta', { itemId, patch }),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
   runHealthCheck: (trigger = 'manual') => ipcRenderer.invoke('run-health-check', trigger),
@@ -185,6 +194,9 @@ contextBridge.exposeInMainWorld('boothAPI', {
   },
   onAssetsRefreshed: (handler) => {
     return subscribe('assets-refreshed', handler);
+  },
+  onWishlistImportProgress: (handler) => {
+    return subscribe('wishlist-import-progress', handler);
   },
   onAutoBootstrapStatus: (handler) => {
     return subscribe('auto-bootstrap-status', handler);

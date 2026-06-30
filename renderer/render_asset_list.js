@@ -1,4 +1,4 @@
-﻿(function attachRenderAssetList(global) {
+(function attachRenderAssetList(global) {
   function createRenderAssetList(deps) {
     const state = deps?.state;
     const domRefs = deps?.domRefs || {};
@@ -74,6 +74,30 @@
     function invalidateFilterCache() {
       filteredCache = null;
       filteredCacheKey = null;
+    }
+
+    function formatWishlistCardPrice(asset) {
+      const min = Number(asset?.priceMin ?? asset?.price);
+      const max = Number(asset?.priceMax ?? asset?.price);
+      if (Number.isFinite(min) && min > 0 && Number.isFinite(max) && max > min) {
+        return `¥${Math.round(min).toLocaleString('ja-JP')}〜`;
+      }
+      const price = Number(asset?.price);
+      return Number.isFinite(price) && price > 0
+        ? `¥${Math.round(price).toLocaleString('ja-JP')}`
+        : '';
+    }
+
+    function createWishlistPriceChip(asset, compact = false) {
+      const text = formatWishlistCardPrice(asset);
+      if (!text) return null;
+      const chip = document.createElement('span');
+      chip.className = compact
+        ? 'text-[9px] px-1.5 py-0.5 rounded border border-pink-400/20 bg-pink-400/10 text-pink-200 font-mono-custom whitespace-nowrap'
+        : 'text-[10px] px-2 py-1 rounded-md border border-pink-400/20 bg-pink-400/10 text-pink-100 font-mono-custom self-start';
+      chip.textContent = text;
+      chip.title = `価格: ${text}`;
+      return chip;
     }
 
     if (
@@ -276,7 +300,7 @@
     }
 
     function bindDownloadActions(asset, target, dlBtn, openBtn) {
-      dlBtn.addEventListener('click', async (event) => {
+      dlBtn?.addEventListener('click', async (event) => {
         event.stopPropagation();
         const latestAsset = getAssetByItemId(asset.itemId) || asset;
         const uiShowsImport = String(event.currentTarget?.textContent || '').trim().includes('インポート');
@@ -287,7 +311,7 @@
         }
       });
 
-      openBtn.addEventListener('click', async (event) => {
+      openBtn?.addEventListener('click', async (event) => {
         event.stopPropagation();
         await openItemFolderAction(asset.itemId, asset.title || '');
       });
@@ -311,7 +335,7 @@
       if (previewSrc) {
         const img = document.createElement('img');
         img.src = previewSrc;
-        img.className = 'absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105';
+        img.className = 'absolute inset-0 booth-image-contain transition-transform group-hover:scale-105';
         img.loading = 'lazy';
         thumbWrapper.appendChild(img);
       } else {
@@ -347,6 +371,12 @@
       title.title = asset.title || 'アイテム';
       infoContainer.appendChild(title);
 
+      const isWishlistOnly = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
+      if (isWishlistOnly) {
+        const priceChip = createWishlistPriceChip(asset);
+        if (priceChip) infoContainer.appendChild(priceChip);
+      }
+
       const sa = Array.isArray(asset.supportedAvatars) ? asset.supportedAvatars.filter(Boolean) : [];
       if (sa.length) {
         const badgeRow = document.createElement('div');
@@ -363,7 +393,7 @@
             badge.className = 'inline-block w-4 h-4 rounded-full overflow-hidden border border-white/15 flex-shrink-0';
             const imgEl = document.createElement('img');
             imgEl.src = imgUrl;
-            imgEl.className = 'w-full h-full object-cover';
+            imgEl.className = 'booth-image-contain';
             imgEl.alt = name;
             badge.appendChild(imgEl);
           } else {
@@ -412,14 +442,20 @@
       downloadContainer.className = 'download-container mt-auto pt-2 border-t border-gray-800/50';
       const buttonRow = document.createElement('div');
       buttonRow.className = 'flex items-center justify-between gap-2';
-      const dlBtn = document.createElement('button');
-      dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition';
-      applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
-      const openBtn = document.createElement('button');
-      openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-500 hover:text-white transition';
-      openBtn.textContent = 'フォルダ';
-      buttonRow.appendChild(dlBtn);
-      buttonRow.appendChild(openBtn);
+
+      let dlBtn = null;
+      let openBtn = null;
+      if (!isWishlistOnly) {
+        dlBtn = document.createElement('button');
+        dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition';
+        applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
+        buttonRow.appendChild(dlBtn);
+
+        openBtn = document.createElement('button');
+        openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-500 hover:text-white transition';
+        openBtn.textContent = 'フォルダ';
+        buttonRow.appendChild(openBtn);
+      }
 
       const progressUi = createProgressUi();
       progressUi.progressWrapper.classList.add('mt-2');
@@ -487,7 +523,7 @@
       if (asset.preview?.[0]) {
         const img = document.createElement('img');
         img.src = asset.preview[0];
-        img.className = 'w-full h-full object-cover';
+        img.className = 'booth-image-contain';
         img.loading = 'lazy';
         thumbCell.appendChild(img);
       } else {
@@ -530,18 +566,29 @@
       actionsCell.className = 'flex flex-col gap-1';
       const actionTop = document.createElement('div');
       actionTop.className = 'flex items-center gap-1';
-      const dlBtn = document.createElement('button');
-      dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition rounded';
-      applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
-      const openBtn = document.createElement('button');
-      openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-400 hover:text-white border border-gray-800 rounded';
-      openBtn.textContent = 'Folder';
+
+      const isWishlistOnlyRow = Boolean(asset.isWishlisted) && !asset.downloaded && !(asset.files && asset.files.length);
+
+      let dlBtn = null;
+      let openBtn = null;
       const statusEl = document.createElement('span');
-      statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded ? 'text-emerald-300' : 'text-gray-500')}`;
-      statusEl.textContent = asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL');
-      actionTop.appendChild(dlBtn);
-      actionTop.appendChild(openBtn);
-      actionTop.appendChild(statusEl);
+      if (!isWishlistOnlyRow) {
+        dlBtn = document.createElement('button');
+        dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition rounded';
+        applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
+        actionTop.appendChild(dlBtn);
+
+        openBtn = document.createElement('button');
+        openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-400 hover:text-white border border-gray-800 rounded';
+        openBtn.textContent = 'Folder';
+        statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded ? 'text-emerald-300' : 'text-gray-500')}`;
+        statusEl.textContent = asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL');
+        actionTop.appendChild(openBtn);
+        actionTop.appendChild(statusEl);
+      } else {
+        const priceChip = createWishlistPriceChip(asset, true);
+        if (priceChip) actionTop.appendChild(priceChip);
+      }
 
       const progressUi = createProgressUi();
       actionsCell.appendChild(actionTop);
@@ -578,10 +625,22 @@
       }
       if (domRefs.filterBtns) {
         const validViews = ['updated', 'review', 'wishlist', 'removed'];
+        const all = Array.isArray(state.allAssets) ? state.allAssets : [];
+        const filterCounts = {
+          all: all.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded)).length,
+          updated: all.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded) && a.hasUpdate).length,
+          wishlist: all.filter((a) => !a.isRemoved && a.isWishlisted).length,
+          removed: all.filter((a) => Boolean(a.isRemoved)).length,
+        };
         domRefs.filterBtns.forEach((btn) => {
           const raw = btn.dataset.filter || 'all';
           const view = validViews.includes(raw) ? raw : 'all';
           btn.classList.toggle('active', view === state.viewFilter);
+          const countEl = btn.querySelector('.filter-count');
+          if (countEl) {
+            const n = filterCounts[raw] ?? filterCounts.all;
+            countEl.textContent = n > 0 ? String(n) : '';
+          }
         });
       }
     }
@@ -614,12 +673,16 @@
         filtered = filtered.filter((asset) => Boolean(asset.isRemoved));
       }
 
-      if (state.viewFilter === 'updated') {
-        filtered = filtered.filter((asset) => Boolean(asset.hasUpdate));
-      } else if (state.viewFilter === 'review') {
-        filtered = filtered.filter((asset) => String(asset?.supportedAvatarAnalysis?.status || '') === 'review');
-      } else if (state.viewFilter === 'wishlist') {
+      if (state.viewFilter === 'wishlist') {
         filtered = filtered.filter((asset) => Boolean(asset.isWishlisted));
+      } else {
+        // wishlist-only items (未購入) are hidden from all other views
+        filtered = filtered.filter((asset) => !asset.isWishlisted || asset.downloaded);
+        if (state.viewFilter === 'updated') {
+          filtered = filtered.filter((asset) => Boolean(asset.hasUpdate));
+        } else if (state.viewFilter === 'review') {
+          filtered = filtered.filter((asset) => String(asset?.supportedAvatarAnalysis?.status || '') === 'review');
+        }
       }
       const activeAvatarFilters = Array.isArray(state.avatarFilters) && state.avatarFilters.length
         ? state.avatarFilters
@@ -1321,6 +1384,7 @@
         domRefs.sortSelect.value = state.sortMode;
         domRefs.sortSelect.addEventListener('change', (event) => {
           state.sortMode = String(event.target.value || 'date_desc');
+          try { localStorage.setItem('assetSortMode', state.sortMode); } catch { /* ignore */ }
           renderGrid();
         });
       }
@@ -1353,7 +1417,3 @@
     createRenderAssetList,
   };
 })(window);
-
-
-
-

@@ -22,6 +22,8 @@
     const setAvatarFilterPanelOpen = deps?.setAvatarFilterPanelOpen;
     const icons = deps?.icons || {};
     const logger = deps?.logger || global.console;
+    const updateUserMeta = deps?.updateUserMeta;
+    const reloadAssetsMap = deps?.reloadAssetsMap;
 
     if (
       !state || !boothAPI || typeof esc !== 'function' || typeof enableKeyboardActivation !== 'function'
@@ -121,7 +123,8 @@
         if (previewUrl) {
           const img = document.createElement('img');
           img.src = previewUrl;
-          img.className = 'w-full h-full object-contain';
+          img.className = 'booth-image-contain';
+          img.style.objectFit = 'contain';
           img.alt = '';
           domRefs.modalPreviewBox.appendChild(img);
         } else {
@@ -328,7 +331,8 @@
         } else if (isImgEntry && entry.fullPath) {
           const img = document.createElement('img');
           img.src = `file://${entry.fullPath}`;
-          img.className = 'w-full h-full object-contain';
+          img.className = 'booth-image-contain';
+          img.style.objectFit = 'contain';
           img.loading = 'lazy';
           img.onerror = () => { thumb.innerHTML = `<span class="text-gray-600">${getIconForFile(entry.name)}</span>`; };
           thumb.appendChild(img);
@@ -495,6 +499,7 @@
       if (domRefs.modalPath) domRefs.modalPath.textContent = `__extracted / ${asset.itemId}_${(asset.title || 'NO_NAME').replace(/[\\/:*?"<>|]/g, '_')}`;
       if (domRefs.currentFolderLabel) domRefs.currentFolderLabel.textContent = 'ルート';
       resetPreviewInspector();
+      renderAssetMetaSection(asset);
       renderAvatarAnalysisPanel(asset);
       const currentItemId = String(asset?.itemId || '');
       if (boothAPI.getImportHistory && currentItemId) {
@@ -508,6 +513,15 @@
       }
       if (domRefs.modalFileGrid) domRefs.modalFileGrid.innerHTML = '';
       if (domRefs.modalTree) domRefs.modalTree.innerHTML = '';
+
+      const isWishlistOnly = Boolean(asset.isWishlisted) && !asset.downloaded;
+      setWishlistOnlyLayout(isWishlistOnly);
+      if (isWishlistOnly) {
+        domRefs.previewOverlay.classList.remove('hidden');
+        domRefs.previewOverlay.classList.add('flex');
+        return;
+      }
+
       const res = await boothAPI.listItemFiles(asset.itemId, asset.title || '');
       if (res?.error) {
         if (domRefs.modalFileGrid) {
@@ -537,12 +551,412 @@
       domRefs.previewOverlay.classList.add('flex');
     }
 
+    function setWishlistOnlyLayout(on) {
+      const treePanel = document.getElementById('modal-tree-panel');
+      const filePanel = document.getElementById('modal-file-panel');
+      const inspector = document.getElementById('modal-inspector-panel');
+      const folderBtn = document.getElementById('modal-open-folder');
+      const entryBtn = document.getElementById('modal-open-entry');
+      const backBtn = document.getElementById('modal-back');
+      const pathEl = document.getElementById('modal-path');
+      const pathSep = document.getElementById('modal-path-sep');
+      const previewBox = document.getElementById('modal-preview-box');
+      const fileMeta = document.getElementById('modal-inspector-filemeta');
+      const fileActions = document.getElementById('modal-file-actions');
+      const metaArea = document.getElementById('modal-inspector-meta');
+      const avatarAnalysis = domRefs.assetAvatarAnalysis;
+      const importHistory = domRefs.assetImportHistory;
+      if (!inspector) return;
+      if (on) {
+        if (treePanel) treePanel.style.display = 'none';
+        if (filePanel) filePanel.style.display = 'none';
+        if (folderBtn) folderBtn.style.display = 'none';
+        if (entryBtn) entryBtn.style.display = 'none';
+        if (backBtn) backBtn.style.display = 'none';
+        if (pathEl) pathEl.style.display = 'none';
+        if (pathSep) pathSep.style.display = 'none';
+        if (fileMeta) fileMeta.style.display = 'none';
+        if (fileActions) fileActions.style.display = 'none';
+        if (avatarAnalysis) avatarAnalysis.style.display = 'none';
+        if (importHistory) importHistory.style.display = 'none';
+        inspector.classList.remove('w-64');
+        inspector.classList.add('flex-1', 'border-l-0', 'wishlist-preview-mode');
+        inspector.style.flexDirection = 'row';
+        if (previewBox) {
+          previewBox.style.width = '380px';
+          previewBox.style.height = '380px';
+          previewBox.style.aspectRatio = '1 / 1';
+          previewBox.style.flexShrink = '0';
+          previewBox.style.borderBottom = 'none';
+          previewBox.style.borderRight = '1px solid rgba(148,163,184,0.08)';
+          previewBox.style.padding = '18px';
+        }
+        if (metaArea) {
+          metaArea.style.flex = '1';
+          metaArea.style.overflowY = 'auto';
+        }
+      } else {
+        if (treePanel) treePanel.style.display = '';
+        if (filePanel) filePanel.style.display = '';
+        if (folderBtn) folderBtn.style.display = '';
+        if (entryBtn) entryBtn.style.display = '';
+        if (backBtn) backBtn.style.display = '';
+        if (pathEl) pathEl.style.display = '';
+        if (pathSep) pathSep.style.display = '';
+        if (fileMeta) fileMeta.style.display = '';
+        if (fileActions) fileActions.style.display = '';
+        if (avatarAnalysis) avatarAnalysis.style.display = '';
+        if (importHistory) importHistory.style.display = '';
+        inspector.classList.add('w-64');
+        inspector.classList.remove('flex-1', 'border-l-0', 'wishlist-preview-mode');
+        inspector.style.flexDirection = '';
+        if (previewBox) {
+          previewBox.style.width = '';
+          previewBox.style.height = '';
+          previewBox.style.aspectRatio = '';
+          previewBox.style.flexShrink = '';
+          previewBox.style.borderBottom = '';
+          previewBox.style.borderRight = '';
+          previewBox.style.padding = '';
+        }
+        if (metaArea) {
+          metaArea.style.flex = '';
+          metaArea.style.overflowY = '';
+        }
+      }
+    }
+
     function closePreviewModal() {
+      setWishlistOnlyLayout(false);
       domRefs.previewOverlay?.classList.add('hidden');
       domRefs.previewOverlay?.classList.remove('flex');
       state.modal.reviewQueueItemIds = [];
       state.modal.reviewQueueIndex = -1;
       renderReviewQueueControls();
+    }
+
+    let _noteDebounceTimer = null;
+
+    function renderTagChip(tag, tags, asset) {
+      const chip = document.createElement('span');
+      chip.className = 'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/20';
+      chip.textContent = tag;
+      const del = document.createElement('button');
+      del.className = 'ml-0.5 text-indigo-400 hover:text-red-400 transition-colors leading-none';
+      del.textContent = '×';
+      del.title = 'タグを削除';
+      del.addEventListener('click', async () => {
+        const next = tags.filter((t) => t !== tag);
+        await saveUserTags(asset, next);
+      });
+      chip.appendChild(del);
+      return chip;
+    }
+
+    function renderTagsList(tags, asset) {
+      if (!domRefs.modalUserTagsList) return;
+      domRefs.modalUserTagsList.innerHTML = '';
+      for (const tag of (tags || [])) {
+        domRefs.modalUserTagsList.appendChild(renderTagChip(tag, tags, asset));
+      }
+    }
+
+    async function saveUserTags(asset, tags) {
+      if (!updateUserMeta || !asset?.itemId) return;
+      const res = await updateUserMeta(asset.itemId, { userTags: tags });
+      if (res?.ok && state.modal.selectedAsset?.itemId === asset.itemId) {
+        state.modal.selectedAsset = { ...state.modal.selectedAsset, userTags: tags };
+        renderTagsList(tags, state.modal.selectedAsset);
+      }
+    }
+
+    function formatWishlistDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
+    function formatYen(value) {
+      return typeof value === 'number' && Number.isFinite(value) && value > 0
+        ? `¥${Math.round(value).toLocaleString('ja-JP')}`
+        : '';
+    }
+
+    function formatWishlistPrice(asset) {
+      const min = Number(asset?.priceMin ?? asset?.price);
+      const max = Number(asset?.priceMax ?? asset?.price);
+      if (Number.isFinite(min) && min > 0 && Number.isFinite(max) && max > min) {
+        return `${formatYen(min)}〜${formatYen(max)}`;
+      }
+      const price = Number(asset?.price);
+      return Number.isFinite(price) && price > 0
+        ? formatYen(price)
+        : '価格未取得';
+    }
+
+    function getWishlistPriceLabel(asset) {
+      const min = Number(asset?.priceMin ?? asset?.price);
+      const max = Number(asset?.priceMax ?? asset?.price);
+      return Number.isFinite(min) && min > 0 && Number.isFinite(max) && max > min
+        ? 'Price Range'
+        : 'Price';
+    }
+
+    function renderWishlistPriceBreakdown(asset) {
+      const rows = Array.isArray(asset?.priceVariations)
+        ? asset.priceVariations
+          .filter((row) => String(row?.name || '').trim() && Number.isFinite(Number(row?.price)) && Number(row.price) > 0)
+          .slice(0, 30)
+        : [];
+      if (rows.length <= 1) return '';
+      return `
+        <div class="wishlist-price-breakdown">
+          ${rows.map((row) => `
+            <div class="wishlist-price-row">
+              <div class="wishlist-price-name" title="${esc(row.name)}">${esc(row.name)}</div>
+              <div class="wishlist-price-value">${esc(formatYen(Number(row.price)))}</div>
+              <button class="wishlist-variation-cart-btn" data-cart-btn="1" data-variation-name="${esc(row.name)}" style="flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:2px 7px;border-radius:5px;border:1px solid rgba(99,102,241,0.5);background:rgba(99,102,241,0.12);color:#a5b4fc;cursor:pointer;white-space:nowrap">カートへ</button>
+              <button class="wishlist-variation-cart-btn" data-buy-btn="1" data-variation-name="${esc(row.name)}" style="flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:2px 7px;border-radius:5px;border:1px solid rgba(52,211,153,0.4);background:rgba(52,211,153,0.08);color:#6ee7b7;cursor:pointer;white-space:nowrap">購入する</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderWishlistSummary(asset, enabled) {
+      const summary = document.getElementById('modal-wishlist-summary');
+      if (!summary) return;
+      summary.classList.toggle('hidden', !enabled);
+      if (!enabled || !asset) {
+        summary.innerHTML = '';
+        return;
+      }
+      const itemId = String(asset.itemId || '-');
+      summary.innerHTML = `
+        <div class="wishlist-summary-top">
+          <span class="wishlist-pill">ほしいリスト</span>
+          <span class="text-[10px] text-zinc-500 truncate">未購入アイテム</span>
+        </div>
+        <div class="wishlist-summary-grid">
+          <div class="wishlist-summary-cell">
+            <div class="wishlist-summary-label">Item ID</div>
+            <div class="wishlist-summary-value" title="${esc(itemId)}">${esc(itemId)}</div>
+          </div>
+          <div class="wishlist-summary-cell">
+            <div class="wishlist-summary-label">${esc(getWishlistPriceLabel(asset))}</div>
+            <div class="wishlist-summary-value">${esc(formatWishlistPrice(asset))}</div>
+          </div>
+          <div class="wishlist-summary-cell">
+            <div class="wishlist-summary-label">Added</div>
+            <div class="wishlist-summary-value">${esc(formatWishlistDate(asset.wishlistAddedAt))}</div>
+          </div>
+        </div>
+        ${renderWishlistPriceBreakdown(asset)}
+      `;
+    }
+
+    function applyWishlistMetaPresentation(asset, enabled) {
+      renderWishlistSummary(asset, enabled);
+      domRefs.modalAssetTitleText?.classList.toggle('wishlist-title-text', enabled);
+      domRefs.modalAssetAuthorText?.classList.toggle('wishlist-author-text', enabled);
+      domRefs.modalCopyTitle?.classList.toggle('hidden', enabled);
+      domRefs.modalCopyAuthor?.classList.toggle('hidden', enabled);
+      domRefs.modalWishlistCartBtn?.classList.toggle('hidden', !enabled);
+      domRefs.modalWishlistRemoveBtn?.classList.toggle('wishlist-remove-danger', enabled);
+      if (domRefs.modalUserNote) {
+        domRefs.modalUserNote.rows = enabled ? 6 : 3;
+        domRefs.modalUserNote.placeholder = enabled ? '購入前に確認したいこと、対応アバター、セール待ちなどをメモ...' : 'メモ...';
+      }
+    }
+
+    function renderAssetMetaSection(asset) {
+      if (domRefs.assetUserMeta) domRefs.assetUserMeta.style.display = asset ? '' : 'none';
+      if (!asset) {
+        applyWishlistMetaPresentation(null, false);
+        return;
+      }
+      const showRemove = Boolean(asset.isWishlisted) && !asset.downloaded;
+      applyWishlistMetaPresentation(asset, showRemove);
+      if (domRefs.modalAssetTitleText) domRefs.modalAssetTitleText.textContent = asset.title || '';
+      if (domRefs.modalAssetAuthorText) domRefs.modalAssetAuthorText.textContent = asset.author || '';
+      renderTagsList(asset.userTags || [], asset);
+      if (domRefs.modalUserTagInput) domRefs.modalUserTagInput.value = '';
+      if (domRefs.modalUserNote) domRefs.modalUserNote.value = asset.userNote || '';
+      if (domRefs.modalUserNoteStatus) domRefs.modalUserNoteStatus.textContent = '';
+      if (domRefs.modalWishlistRemoveBtn) {
+        domRefs.modalWishlistRemoveBtn.classList.toggle('hidden', !showRemove);
+        domRefs.modalWishlistRemoveBtn.disabled = false;
+        domRefs.modalWishlistRemoveBtn.textContent = 'ほしいリストから外す';
+      }
+      if (domRefs.modalWishlistCartWrap) {
+        // Hide single cart/buy buttons when per-variation buttons are shown in breakdown
+        const hasMultiVariation = showRemove && Array.isArray(asset?.priceVariations) &&
+          asset.priceVariations.filter((r) => String(r?.name || '').trim() && Number(r?.price) > 0).length > 1;
+        domRefs.modalWishlistCartWrap.classList.toggle('hidden', !showRemove || hasMultiVariation);
+        if (domRefs.modalWishlistCartBtn) { domRefs.modalWishlistCartBtn.disabled = false; domRefs.modalWishlistCartBtn.textContent = 'カートへ'; }
+        if (domRefs.modalWishlistBuyBtn) { domRefs.modalWishlistBuyBtn.disabled = false; domRefs.modalWishlistBuyBtn.textContent = '購入する'; }
+      }
+    }
+
+    function mapCartError(raw) {
+      const msg = String(raw || '');
+      if (msg.includes('invalid_item_id_or_url')) return 'BOOTH item ID を確認できませんでした。';
+      if (msg.includes('item_page_fetch_failed')) return 'BOOTHの商品ページを取得できませんでした。';
+      if (msg.includes('cart_authenticity_token_not_found')) return 'カート追加用の認証トークンを取得できませんでした。';
+      if (msg.includes('cart_variation_ambiguous')) return '複数のバリエーションがあります。誤追加防止のためBOOTH上で選択してください。';
+      if (msg.includes('cart_variation_not_found')) return '購入バリエーションを取得できませんでした。';
+      if (msg.includes('cart_action_not_found')) return 'カート追加フォームを取得できませんでした。';
+      if (msg.includes('cart_add_failed')) return 'BOOTHカートへの追加に失敗しました。';
+      return msg || 'BOOTHカートへの追加に失敗しました。';
+    }
+
+    function bindUserMetaEvents() {
+      domRefs.modalCopyTitle?.addEventListener('click', () => {
+        const text = state.modal.selectedAsset?.title || '';
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+          if (domRefs.modalCopyTitle) {
+            domRefs.modalCopyTitle.textContent = '✓';
+            setTimeout(() => { if (domRefs.modalCopyTitle) domRefs.modalCopyTitle.textContent = 'コピー'; }, 1200);
+          }
+        }).catch(() => {});
+      });
+
+      domRefs.modalCopyAuthor?.addEventListener('click', () => {
+        const text = state.modal.selectedAsset?.author || '';
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+          if (domRefs.modalCopyAuthor) {
+            domRefs.modalCopyAuthor.textContent = '✓';
+            setTimeout(() => { if (domRefs.modalCopyAuthor) domRefs.modalCopyAuthor.textContent = 'コピー'; }, 1200);
+          }
+        }).catch(() => {});
+      });
+
+      const addTag = async () => {
+        const input = domRefs.modalUserTagInput;
+        if (!input) return;
+        const tag = String(input.value || '').trim();
+        if (!tag || !state.modal.selectedAsset) return;
+        const existing = state.modal.selectedAsset.userTags || [];
+        if (existing.includes(tag)) { input.value = ''; return; }
+        const next = [...existing, tag];
+        input.value = '';
+        await saveUserTags(state.modal.selectedAsset, next);
+      };
+
+      domRefs.modalUserTagAdd?.addEventListener('click', addTag);
+      domRefs.modalUserTagInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+      });
+
+      domRefs.modalUserNote?.addEventListener('input', () => {
+        if (_noteDebounceTimer) clearTimeout(_noteDebounceTimer);
+        if (domRefs.modalUserNoteStatus) domRefs.modalUserNoteStatus.textContent = '…';
+        _noteDebounceTimer = setTimeout(async () => {
+          const asset = state.modal.selectedAsset;
+          if (!asset?.itemId || !updateUserMeta) return;
+          const note = String(domRefs.modalUserNote?.value || '');
+          const res = await updateUserMeta(asset.itemId, { userNote: note });
+          if (domRefs.modalUserNoteStatus) {
+            domRefs.modalUserNoteStatus.textContent = res?.ok ? '保存済み' : '保存失敗';
+            setTimeout(() => { if (domRefs.modalUserNoteStatus) domRefs.modalUserNoteStatus.textContent = ''; }, 1500);
+          }
+          if (res?.ok && state.modal.selectedAsset?.itemId === asset.itemId) {
+            state.modal.selectedAsset = { ...state.modal.selectedAsset, userNote: note };
+          }
+        }, 800);
+      });
+
+      const handleSingleCartClick = async (openCheckout) => {
+        const asset = state.modal.selectedAsset;
+        if (!asset?.itemId || !boothAPI?.addWishlistItemToCart) return;
+        const cartBtn = domRefs.modalWishlistCartBtn;
+        const buyBtn = domRefs.modalWishlistBuyBtn;
+        const activeBtn = openCheckout ? buyBtn : cartBtn;
+        if (cartBtn) { cartBtn.disabled = true; cartBtn.textContent = '追加中...'; }
+        if (buyBtn) { buyBtn.disabled = true; buyBtn.textContent = '追加中...'; }
+        try {
+          const res = await boothAPI.addWishlistItemToCart(String(asset.itemId));
+          if (res?.ok) {
+            if (cartBtn) { cartBtn.textContent = '✓ 追加済み'; }
+            if (buyBtn) { buyBtn.disabled = false; buyBtn.textContent = '購入する'; }
+            showTransientMessage?.('BOOTHカートに追加しました。', 'info');
+            if (openCheckout && res.checkoutUrl) boothAPI.openExternalUrl(res.checkoutUrl);
+          } else if (String(res?.error || '').includes('cart_variation_ambiguous')) {
+            boothAPI.openExternalUrl(`https://booth.pm/ja/items/${asset.itemId}`);
+            showTransientMessage?.('バリエーションを選択してください（BOOTHで開きました）。', 'info');
+            if (cartBtn) { cartBtn.disabled = false; cartBtn.textContent = 'カートへ'; }
+            if (buyBtn) { buyBtn.disabled = false; buyBtn.textContent = '購入する'; }
+          } else {
+            throw new Error(mapCartError(res?.error));
+          }
+        } catch (error) {
+          if (cartBtn) { cartBtn.disabled = false; cartBtn.textContent = 'カートへ'; }
+          if (buyBtn) { buyBtn.disabled = false; buyBtn.textContent = '購入する'; }
+          showTransientMessage?.(String(error?.message || error), 'error');
+        }
+      };
+      domRefs.modalWishlistCartBtn?.addEventListener('click', () => handleSingleCartClick(false));
+      domRefs.modalWishlistBuyBtn?.addEventListener('click', () => handleSingleCartClick(true));
+
+      // Per-variation cart/buy buttons (event delegation on summary container)
+      document.getElementById('modal-wishlist-summary')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-cart-btn="1"],[data-buy-btn="1"]');
+        if (!btn || btn.dataset.loading) return;
+        const openCheckout = !!btn.dataset.buyBtn;
+        const origLabel = openCheckout ? '購入する' : 'カートへ';
+        const asset = state.modal.selectedAsset;
+        if (!asset?.itemId || !boothAPI?.addWishlistItemToCart) return;
+        const variationName = btn.dataset.variationName || undefined;
+        btn.dataset.loading = '1';
+        btn.disabled = true;
+        btn.textContent = '追加中…';
+        try {
+          const res = await boothAPI.addWishlistItemToCart(String(asset.itemId), variationName);
+          if (res?.ok) {
+            btn.textContent = '✓ 完了';
+            btn.style.color = '#86efac';
+            btn.style.borderColor = 'rgba(134,239,172,0.5)';
+            btn.style.background = 'rgba(134,239,172,0.08)';
+            if (openCheckout && res.checkoutUrl) boothAPI.openExternalUrl(res.checkoutUrl);
+          } else if (String(res?.error || '').includes('cart_variation_ambiguous')) {
+            boothAPI.openExternalUrl(`https://booth.pm/ja/items/${asset.itemId}`);
+            showTransientMessage?.('バリエーションを選択してください（BOOTHで開きました）。', 'info');
+            delete btn.dataset.loading;
+            btn.disabled = false;
+            btn.textContent = origLabel;
+          } else {
+            throw new Error(mapCartError(res?.error));
+          }
+        } catch (error) {
+          delete btn.dataset.loading;
+          btn.disabled = false;
+          btn.textContent = origLabel;
+          btn.style.color = '';
+          btn.style.borderColor = '';
+          btn.style.background = '';
+          showTransientMessage?.(String(error?.message || error), 'error');
+        }
+      });
+
+      domRefs.modalWishlistRemoveBtn?.addEventListener('click', async () => {
+        const asset = state.modal.selectedAsset;
+        if (!asset?.itemId || !boothAPI?.toggleWishlist) return;
+        const btn = domRefs.modalWishlistRemoveBtn;
+        btn.disabled = true;
+        btn.textContent = '処理中…';
+        const res = await boothAPI.toggleWishlist(String(asset.itemId));
+        if (res?.ok) {
+          closePreviewModal?.();
+          await reloadAssetsMap?.();
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'ほしいリストから外す';
+          showTransientMessage?.('操作に失敗しました。', 'error');
+        }
+      });
     }
 
     function goBack() {
@@ -561,6 +975,7 @@
       domRefs.modalBackBtn?.addEventListener('click', () => {
         goBack();
       });
+      bindUserMetaEvents();
     }
 
     domRefs.modalReviewPrevBtn?.addEventListener('click', async () => {

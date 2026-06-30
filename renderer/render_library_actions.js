@@ -182,9 +182,23 @@
       return msg || '不明なエラー';
     }
 
+    function setWishlistAddStatus(message, tone = 'muted') {
+      const el = domRefs.wishlistAddStatus;
+      if (!el) return;
+      const toneClasses = {
+        muted: 'border-white/8 bg-black/20 text-zinc-500',
+        loading: 'border-sky-400/20 bg-sky-400/10 text-sky-200',
+        success: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200',
+        error: 'border-red-400/25 bg-red-400/10 text-red-200',
+      };
+      Object.values(toneClasses).join(' ').split(' ').forEach((className) => el.classList.remove(className));
+      toneClasses[tone]?.split(' ').forEach((className) => el.classList.add(className));
+      el.textContent = message || '';
+    }
+
     function openWishlistAddModal() {
       if (!domRefs.wishlistAddModal) return;
-      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '';
+      setWishlistAddStatus('URLまたはIDを入力すると自動で内容を確認します。');
       if (domRefs.wishlistAddInput) domRefs.wishlistAddInput.value = '';
       domRefs.wishlistAddModal.classList.remove('hidden');
       domRefs.wishlistAddModal.classList.add('flex');
@@ -216,16 +230,16 @@
     async function previewWishlistAdd({ auto = false } = {}) {
       const input = String(domRefs.wishlistAddInput?.value || '').trim();
       if (!input) {
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'URLまたはIDを入力してください。';
+        setWishlistAddStatus('URLまたはIDを入力してください。', 'error');
         return;
       }
       if (!boothAPI.previewWishlistItem) {
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'previewWishlistItem API が利用できません。';
+        setWishlistAddStatus('previewWishlistItem API が利用できません。', 'error');
         return;
       }
       if (domRefs.wishlistAddPreview) domRefs.wishlistAddPreview.disabled = true;
       if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = true;
-      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '確認中...';
+      setWishlistAddStatus('BOOTH から商品情報を確認中...', 'loading');
       try {
         const res = await boothAPI.previewWishlistItem(input);
         if (res?.error) throw new Error(mapWishlistError(res.error));
@@ -250,15 +264,13 @@
           }
         }
         if (domRefs.wishlistAddPreviewBox) domRefs.wishlistAddPreviewBox.classList.remove('hidden');
-        if (domRefs.wishlistAddStatus) {
-          domRefs.wishlistAddStatus.textContent = auto
-            ? 'プレビューを更新しました。追加できます。'
-            : '内容を確認しました。追加できます。';
-        }
+        setWishlistAddStatus(auto
+          ? 'プレビューを更新しました。追加できます。'
+          : '内容を確認しました。追加できます。', 'success');
         if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = false;
       } catch (error) {
         resetWishlistPreview();
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = `確認失敗: ${String(error?.message || error)}`;
+        setWishlistAddStatus(`確認失敗: ${String(error?.message || error)}`, 'error');
         if (!auto) {
           showTransientMessage(`ほしいリスト確認に失敗: ${String(error?.message || error)}`, 'error');
         }
@@ -280,15 +292,15 @@
     async function submitWishlistAdd() {
       const draft = state.wishlistDraft || null;
       if (!draft || !draft.itemId) {
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '先に確認を実行してください。';
+        setWishlistAddStatus('先に確認を実行してください。', 'error');
         return;
       }
       if (!boothAPI.toggleWishlist) {
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = 'toggleWishlist API が利用できません。';
+        setWishlistAddStatus('toggleWishlist API が利用できません。', 'error');
         return;
       }
       if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = true;
-      if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '追加中...';
+      setWishlistAddStatus('ほしいリストに追加中...', 'loading');
       try {
         const res = await boothAPI.toggleWishlist(draft.itemId, draft.itemIdOrUrl);
         if (res?.error) throw new Error(mapWishlistError(res.error));
@@ -298,7 +310,7 @@
         closeWishlistAddModal();
       } catch (error) {
         const msg = String(error?.message || error);
-        if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = `追加失敗: ${msg}`;
+        setWishlistAddStatus(`追加失敗: ${msg}`, 'error');
         showTransientMessage(`ほしいリスト追加に失敗: ${msg}`, 'error');
       } finally {
         if (domRefs.wishlistAddSubmit) domRefs.wishlistAddSubmit.disabled = false;
@@ -396,7 +408,12 @@
       if (domRefs.wishlistAddInput) {
         domRefs.wishlistAddInput.addEventListener('input', () => {
           resetWishlistPreview();
-          if (domRefs.wishlistAddStatus) domRefs.wishlistAddStatus.textContent = '入力を確認中...';
+          const input = String(domRefs.wishlistAddInput?.value || '').trim();
+          if (!input) {
+            setWishlistAddStatus('URLまたはIDを入力すると自動で内容を確認します。');
+            return;
+          }
+          setWishlistAddStatus('入力を確認中...', 'loading');
           scheduleWishlistPreview();
         });
         domRefs.wishlistAddInput.addEventListener('keydown', async (event) => {
@@ -405,6 +422,43 @@
           await previewWishlistAdd();
         });
       }
+
+      domRefs.wishlistImportBoothBtn?.addEventListener('click', async () => {
+        const btn = domRefs.wishlistImportBoothBtn;
+        const progressEl = domRefs.wishlistImportProgress;
+        if (btn.dataset.loading) return;
+        btn.dataset.loading = '1';
+        btn.disabled = true;
+        btn.textContent = '取得中…';
+        if (progressEl) { progressEl.classList.remove('hidden'); progressEl.textContent = 'BOOTHほしいリストを取得しています…'; }
+
+        let unsubProgress = null;
+        if (boothAPI.onWishlistImportProgress) {
+          unsubProgress = boothAPI.onWishlistImportProgress(({ done, total, itemId }) => {
+            if (progressEl) progressEl.textContent = `処理中 ${done + 1} / ${total} 件… (${itemId})`;
+          });
+        }
+
+        try {
+          const res = await boothAPI.importBoothWishlist();
+          if (res?.error) {
+            if (progressEl) progressEl.textContent = `エラー: ${res.error}`;
+          } else if (res?.ok) {
+            const msg = res.imported > 0
+              ? `${res.imported} 件を追加しました（スキップ: ${res.skipped} 件）`
+              : `追加対象なし（既に登録済み: ${res.skipped} 件）`;
+            if (progressEl) progressEl.textContent = msg;
+            setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 5000);
+          }
+        } catch (e) {
+          if (progressEl) progressEl.textContent = `エラー: ${e?.message || String(e)}`;
+        } finally {
+          unsubProgress?.();
+          delete btn.dataset.loading;
+          btn.disabled = false;
+          btn.textContent = 'インポート';
+        }
+      });
     }
 
     return {
