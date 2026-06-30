@@ -351,6 +351,19 @@ describe('applyVersionTrackingKeepingManual', () => {
     expect(kept.isRemoved).toBeFalsy();
   });
 
+  test('isWishlisted アイテムを同じ meta で補完しても wishlist 状態は維持される', () => {
+    const wishlistItem = {
+      ...makeItem('999', []),
+      isWishlisted: true,
+      wishlistAddedAt: AT,
+    };
+    const { items } = applyVersionTrackingKeepingManual([wishlistItem], [wishlistItem], AT);
+    const kept = items.find((i) => i.itemId === '999');
+    expect(kept).toBeDefined();
+    expect(kept.isWishlisted).toBe(true);
+    expect(kept.wishlistAddedAt).toBe(AT);
+  });
+
   test('isWishlisted アイテムが latestMeta に登場した場合は通常アイテムに昇格する', () => {
     const wishlistItem = {
       ...makeItem('999', []),
@@ -363,7 +376,29 @@ describe('applyVersionTrackingKeepingManual', () => {
     const upgraded = items.find((i) => i.itemId === '999');
     expect(upgraded).toBeDefined();
     expect(upgraded.downloadLinks).toHaveLength(1);
+    expect(upgraded.isWishlisted).toBe(false);
+    expect(upgraded.wishlistAddedAt).toBeUndefined();
     expect(upgraded.isRemoved).toBeFalsy();
+  });
+
+  test('isWishlisted アイテムが購入済みで再登場した場合は削除済み扱いにもならない', () => {
+    const wishlistItem = {
+      ...makeItem('999', []),
+      isWishlisted: true,
+      wishlistAddedAt: AT,
+      isRemoved: true,
+      removedAt: AT,
+    };
+    const existing = [wishlistItem];
+    const latest = [makeItem('999', ['purchased.zip'])];
+    const { items } = applyVersionTrackingKeepingManual(existing, latest, AT);
+    const upgraded = items.find((i) => i.itemId === '999');
+    expect(upgraded).toBeDefined();
+    expect(upgraded.downloadLinks).toHaveLength(1);
+    expect(upgraded.isWishlisted).toBe(false);
+    expect(upgraded.wishlistAddedAt).toBeUndefined();
+    expect(upgraded.isRemoved).toBe(false);
+    expect(upgraded.removedAt).toBeUndefined();
   });
 });
 
