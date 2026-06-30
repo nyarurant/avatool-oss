@@ -302,26 +302,23 @@ describe('applyVersionTrackingKeepingManual', () => {
     expect(items.find((i) => i.itemId === '100')).toBeDefined();
   });
 
-  test('manualAdded でないアイテムが latestMeta から消えた場合は isRemoved: true で保持される', () => {
+  test('manualAdded でないアイテムが latestMeta から消えても通常アイテムとして保持される', () => {
     const AT2 = '2026-02-01T00:00:00.000Z';
     // 初回: アイテム 100 を登録
     const v1 = applyVersionTrackingKeepingManual([], [makeItem('100', ['a.zip'])], AT).items;
     // 2回目: アイテム 100 が latestMeta から消えた
     const { items } = applyVersionTrackingKeepingManual(v1, [], AT2);
-    const removed = items.find((i) => i.itemId === '100');
-    expect(removed).toBeDefined();
-    expect(removed.isRemoved).toBe(true);
-    expect(removed.removedAt).toBeDefined();
+    const kept = items.find((i) => i.itemId === '100');
+    expect(kept).toBeDefined();
+    expect(kept.isRemoved).toBeFalsy();
+    expect(kept.removedAt).toBeUndefined();
   });
 
   test('isRemoved アイテムが latestMeta に再登場した場合は isRemoved フラグが解除される', () => {
-    const AT2 = '2026-02-01T00:00:00.000Z';
     const AT3 = '2026-03-01T00:00:00.000Z';
-    const v1 = applyVersionTrackingKeepingManual([], [makeItem('100', ['a.zip'])], AT).items;
-    const v2 = applyVersionTrackingKeepingManual(v1, [], AT2).items;
-    expect(v2.find((i) => i.itemId === '100')?.isRemoved).toBe(true);
+    const existing = [{ ...makeItem('100', ['a.zip']), isRemoved: true, removedAt: '2026-02-01T00:00:00.000Z' }];
     // 再登場
-    const { items } = applyVersionTrackingKeepingManual(v2, [makeItem('100', ['a.zip'])], AT3);
+    const { items } = applyVersionTrackingKeepingManual(existing, [makeItem('100', ['a.zip'])], AT3);
     const reappeared = items.find((i) => i.itemId === '100');
     expect(reappeared).toBeDefined();
     expect(reappeared.isRemoved).toBeFalsy();
@@ -725,5 +722,35 @@ describe('normalizeAndPersistMeta', () => {
   test('空配列は空配列を返す', () => {
     const { normalizeAndPersistMeta } = createMetaManager(makeDeps());
     expect(normalizeAndPersistMeta([])).toEqual([]);
+  });
+
+  test('半数以上が isRemoved の場合は取得事故として通常状態に戻す', () => {
+    const deps = makeDeps();
+    const { normalizeAndPersistMeta } = createMetaManager(deps);
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      itemId: String(index + 1),
+      itemName: `Item ${index + 1}`,
+      downloadLinks: [],
+      isRemoved: index < 7,
+      removedAt: '2026-01-01T00:00:00.000Z',
+    }));
+    const result = normalizeAndPersistMeta(rows);
+    expect(result.filter((item) => item.isRemoved)).toHaveLength(0);
+    expect(deps.fs.writeFileSync).toHaveBeenCalled();
+  });
+
+  test('少数の isRemoved は通常の削除済みとして維持する', () => {
+    const deps = makeDeps();
+    const { normalizeAndPersistMeta } = createMetaManager(deps);
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      itemId: String(index + 1),
+      itemName: `Item ${index + 1}`,
+      downloadLinks: [],
+      isRemoved: index < 2,
+      removedAt: '2026-01-01T00:00:00.000Z',
+    }));
+    const result = normalizeAndPersistMeta(rows);
+    expect(result.filter((item) => item.isRemoved)).toHaveLength(2);
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
   });
 });
