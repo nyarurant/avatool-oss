@@ -172,14 +172,18 @@ const {
   buildAvatarLabelMap,
 } = avatarFilterUtils;
 
-function requireRendererFactory(globalName, createName) {
-  const mod = window[globalName];
-  const factory = mod?.[createName];
-  if (typeof factory !== 'function') {
-    throw new Error(`${globalName}.${createName} is not loaded.`);
-  }
-  return factory;
-}
+const moduleRegistry = window.AvatoolRenderModuleRegistry.createRenderModuleRegistry();
+const {
+  requireRendererFactory,
+  callRendererModule,
+  getRendererModuleErrorMessage,
+  recordRendererModuleFailure,
+  safeCreateRendererModule,
+  safeBindRendererModule,
+  renderRendererDegradedBanner,
+  safeRunRendererStartupStep,
+  getRendererModule,
+} = moduleRegistry;
 
 const createRenderOverlays = requireRendererFactory('AvatoolRenderOverlays', 'createRenderOverlays');
 const createRenderAuxUi = requireRendererFactory('AvatoolRenderAuxUi', 'createRenderAuxUi');
@@ -200,108 +204,6 @@ const createBoothClientView = (() => {
   const m = window.AvatoolBoothClient;
   return typeof m?.createBoothClientView === 'function' ? m.createBoothClientView : null;
 })();
-const rendererModules = {};
-const rendererModuleFailures = [];
-const rendererModuleFailureKeys = new Set();
-
-function callRendererModule(moduleKey, methodName, args) {
-  const api = rendererModules[moduleKey];
-  const method = api?.[methodName];
-  if (typeof method !== 'function') {
-    recordRendererModuleFailure(moduleKey, methodName, new Error(`Renderer module not ready: ${moduleKey}.${methodName}`));
-    return undefined;
-  }
-  try {
-    return method(...args);
-  } catch (error) {
-    recordRendererModuleFailure(moduleKey, methodName, error);
-    return undefined;
-  }
-}
-
-function getRendererModuleErrorMessage(error) {
-  const message = String(error?.message || error || 'unknown renderer module error').trim();
-  return message || 'unknown renderer module error';
-}
-
-function recordRendererModuleFailure(moduleKey, stage, error) {
-  const message = getRendererModuleErrorMessage(error);
-  const key = `${moduleKey}:${stage}:${message}`;
-  if (rendererModuleFailureKeys.has(key)) return;
-  rendererModuleFailureKeys.add(key);
-  rendererModuleFailures.push({
-    moduleKey: String(moduleKey || 'unknown'),
-    stage: String(stage || 'unknown'),
-    message,
-    stack: String(error?.stack || ''),
-    timestamp: new Date().toISOString(),
-  });
-  console.error(`[renderer-module:${moduleKey}] ${stage} failed`, error);
-}
-
-function safeCreateRendererModule(moduleKey, factory) {
-  try {
-    const api = factory();
-    rendererModules[moduleKey] = api || null;
-    return api || null;
-  } catch (error) {
-    rendererModules[moduleKey] = null;
-    recordRendererModuleFailure(moduleKey, 'create', error);
-    return null;
-  }
-}
-
-function safeBindRendererModule(moduleKey, methodName) {
-  const api = rendererModules[moduleKey];
-  const method = api?.[methodName];
-  if (typeof method !== 'function') return false;
-  try {
-    method.call(api);
-    return true;
-  } catch (error) {
-    recordRendererModuleFailure(moduleKey, methodName, error);
-    return false;
-  }
-}
-
-function renderRendererDegradedBanner() {
-  if (!rendererModuleFailures.length || !document?.body) return;
-  let banner = document.getElementById('renderer-degraded-banner');
-  const failureCount = rendererModuleFailures.length;
-  const moduleNames = Array.from(new Set(rendererModuleFailures.map((entry) => entry.moduleKey))).slice(0, 4).join(', ');
-  if (!banner) {
-    banner = document.createElement('div');
-    banner.id = 'renderer-degraded-banner';
-    banner.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[140] max-w-[92vw] rounded-lg border border-amber-400/40 bg-amber-950/90 px-4 py-2 text-[11px] text-amber-100 shadow-xl backdrop-blur';
-    banner.innerHTML = `
-      <div class="flex items-center gap-3">
-        <div class="min-w-0">
-          <div class="font-semibold">一部機能を無効化して起動しました</div>
-          <div id="renderer-degraded-banner-text" class="text-amber-200/90"></div>
-        </div>
-        <button id="renderer-degraded-banner-log" class="btn-action whitespace-nowrap">ログを開く</button>
-      </div>
-    `;
-    document.body.appendChild(banner);
-    banner.querySelector('#renderer-degraded-banner-log')?.addEventListener('click', () => {
-      window.boothAPI?.openRuntimeLogWindow?.().catch?.(() => {});
-    });
-  }
-  const text = banner.querySelector('#renderer-degraded-banner-text');
-  if (text) {
-    text.textContent = `${failureCount} 件の初期化失敗を検出しました。影響モジュール: ${moduleNames || 'unknown'}`;
-  }
-}
-
-async function safeRunRendererStartupStep(stepName, run) {
-  try {
-    return await run();
-  } catch (error) {
-    recordRendererModuleFailure('startup', stepName, error);
-    return undefined;
-  }
-}
-
 // ========== DOM References ==========
 
 const domRefs = {
@@ -805,81 +707,18 @@ function esc(text) {
     .replace(/'/g, '&#39;');
 }
 
-function setImportProgress(percent, text = '') {
-  const p = Math.max(0, Math.min(100, Number(percent) || 0));
-  if (domRefs.importProgressWrap) domRefs.importProgressWrap.classList.remove('hidden');
-  if (domRefs.importProgressBar) domRefs.importProgressBar.style.width = `${p}%`;
-  if (domRefs.importProgressText) domRefs.importProgressText.textContent = text || `${Math.round(p)}%`;
-}
-
-function resetImportProgress() {
-  if (domRefs.importProgressBar) domRefs.importProgressBar.style.width = '0%';
-  if (domRefs.importProgressText) domRefs.importProgressText.textContent = '0%';
-  if (domRefs.importProgressWrap) domRefs.importProgressWrap.classList.add('hidden');
-  setImportPhase(null);
-}
-
-function setImportAcknowledgeMode(enabled) {
-  const on = Boolean(enabled);
-  if (domRefs.importCloseBtn) {
-    domRefs.importCloseBtn.textContent = on ? 'OK' : '閉じる';
-    domRefs.importCloseBtn.classList.toggle('btn-primary', on);
-  }
-  if (on && domRefs.importBusyIndicator) {
-    domRefs.importBusyIndicator.classList.add('hidden');
-  }
-  if (domRefs.importExecuteBtn) {
-    domRefs.importExecuteBtn.disabled = on || !state.importModal.selectedProject;
-  }
-  if (domRefs.importDryRunBtn) {
-    domRefs.importDryRunBtn.disabled = on || !state.importModal.selectedProject;
-  }
-}
-
-function setImportActionButtonsBusy(busy) {
-  const on = Boolean(busy);
-  if (domRefs.importExecuteBtn) domRefs.importExecuteBtn.classList.toggle('hidden', on);
-  if (domRefs.importDryRunBtn) domRefs.importDryRunBtn.classList.toggle('hidden', on);
-  if (domRefs.importBusyIndicator) domRefs.importBusyIndicator.classList.toggle('hidden', !on);
-}
-
-function setImportCloseDisabled(disabled) {
-  if (domRefs.importCloseBtn) {
-    const on = Boolean(disabled);
-    domRefs.importCloseBtn.disabled = on;
-    domRefs.importCloseBtn.style.opacity = on ? '0.4' : '';
-  }
-}
-
-function setImportPhase(phase, text) {
-  const indicator = domRefs.importPhaseIndicator;
-  if (!indicator) return;
-  if (!phase) {
-    indicator.classList.add('hidden');
-    return;
-  }
-  indicator.classList.remove('hidden');
-  if (domRefs.importPhaseText) domRefs.importPhaseText.textContent = text || '';
-  const isDone = phase === 'done';
-  const isError = phase === 'error';
-  if (domRefs.importPhaseDot) {
-    domRefs.importPhaseDot.style.background = isDone ? '#10b981' : isError ? '#ef4444' : '#3b82f6';
-    domRefs.importPhaseDot.style.animationPlayState = (isDone || isError) ? 'paused' : 'running';
-  }
-  if (domRefs.importPhaseText) {
-    domRefs.importPhaseText.style.color = isDone ? '#34d399' : isError ? '#f87171' : '';
-  }
-  indicator.style.borderColor = isDone
-    ? 'rgba(16,185,129,0.2)'
-    : isError
-      ? 'rgba(239,68,68,0.2)'
-      : 'rgba(59,130,246,0.15)';
-  indicator.style.background = isDone
-    ? 'rgba(16,185,129,0.05)'
-    : isError
-      ? 'rgba(239,68,68,0.05)'
-      : 'rgba(59,130,246,0.05)';
-}
+const importProgressUi = window.AvatoolRenderImportProgressUi.createRenderImportProgressUi({
+  domRefs,
+  state,
+});
+const {
+  setImportProgress,
+  resetImportProgress,
+  setImportAcknowledgeMode,
+  setImportActionButtonsBusy,
+  setImportCloseDisabled,
+  setImportPhase,
+} = importProgressUi;
 
 function isKeyboardActivationEvent(e) {
   return e.key === 'Enter' || e.key === ' ';
@@ -1090,77 +929,11 @@ function isImageFile(name) {
   return lower.match(/\.(png|jpg|jpeg|gif|webp|tga|bmp)$/);
 }
 
-function formatBytes(bytes) {
-  const n = Number(bytes || 0);
-  if (!Number.isFinite(n) || n <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const idx = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / Math.pow(1024, idx);
-  return `${v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${units[idx]}`;
-}
-
-let storageRefreshTimer = null;
-let storageRefreshInFlight = false;
-
-async function refreshStorageUsageUI() {
-  if (!window.boothAPI?.getStorageUsage) return;
-  if (storageRefreshInFlight) return;
-  storageRefreshInFlight = true;
-  try {
-    const res = await window.boothAPI.getStorageUsage();
-    if (!res || res.error) return;
-    const appBytes = Number(res.appBytes || res.totalBytes || 0);
-    const driveTotal = Number(res.drive?.totalBytes || 0);
-    const driveUsed = Number(res.drive?.usedBytes || 0);
-    const otherUsed = Math.max(0, driveUsed - appBytes);
-    if (domRefs.storageUsageText) {
-      if (driveTotal > 0) {
-        domRefs.storageUsageText.textContent = `${formatBytes(appBytes)} / ${formatBytes(driveTotal)}`;
-        domRefs.storageUsageText.title = `アプリ ${appBytes.toLocaleString()} バイト / ドライブ ${driveTotal.toLocaleString()} バイト`;
-      } else {
-        domRefs.storageUsageText.textContent = formatBytes(appBytes);
-        domRefs.storageUsageText.title = `${appBytes.toLocaleString()} バイト`;
-      }
-    }
-    if (driveTotal > 0) {
-      const appPct = Math.max(0, Math.min(100, (appBytes / driveTotal) * 100));
-      const otherPct = Math.max(0, Math.min(100, (otherUsed / driveTotal) * 100));
-      if (domRefs.storageOtherBar) {
-        domRefs.storageOtherBar.style.width = `${otherPct}%`;
-        domRefs.storageOtherBar.title = `その他使用量: ${formatBytes(otherUsed)} (${otherPct.toFixed(2)}%)`;
-      }
-      if (domRefs.storageAppBar) {
-        domRefs.storageAppBar.style.left = `${otherPct}%`;
-        domRefs.storageAppBar.style.width = `${appPct}%`;
-        domRefs.storageAppBar.title = `アプリ使用量: ${formatBytes(appBytes)} (${appPct.toFixed(2)}%)`;
-      }
-      if (domRefs.storageBreakdown) {
-        domRefs.storageBreakdown.textContent = `アプリ ${appPct.toFixed(2)}% / その他 ${otherPct.toFixed(2)}%`;
-      }
-    } else {
-      if (domRefs.storageOtherBar) domRefs.storageOtherBar.style.width = '0%';
-      if (domRefs.storageAppBar) {
-        domRefs.storageAppBar.style.left = '0%';
-        domRefs.storageAppBar.style.width = '0%';
-      }
-      if (domRefs.storageBreakdown) {
-        domRefs.storageBreakdown.textContent = `アプリ ${formatBytes(appBytes)}`;
-      }
-    }
-  } catch (e) {
-    console.warn('storage usage refresh failed', e);
-  } finally {
-    storageRefreshInFlight = false;
-  }
-}
-
-function scheduleStorageUsageRefresh(delay = 800) {
-  if (storageRefreshTimer) clearTimeout(storageRefreshTimer);
-  storageRefreshTimer = setTimeout(() => {
-    storageRefreshTimer = null;
-    refreshStorageUsageUI().catch(() => {});
-  }, delay);
-}
+const storageUsageUi = window.AvatoolRenderStorageUsageUi.createRenderStorageUsageUi({
+  domRefs,
+  boothAPI: window.boothAPI,
+});
+const { formatBytes, refreshStorageUsageUI, scheduleStorageUsageRefresh } = storageUsageUi;
 
 /**
  * Read scoped meta progress from the renderer app-state module.
@@ -1193,7 +966,7 @@ function isSuppressedNotificationMessage(message) {
     || /起動時の自動ダウンロードを開始しました/i.test(text)
     || /起動時の自動ダウンロードを実行中/i.test(text)
     || /起動時の自動ダウンロードが完了しました/i.test(text)
-    || /^ヘルスチェック:\s*error\s*\d+\s*\/\s*warn\s*\d+/i.test(text)
+    || /^ヘルスチェック[：:]/i.test(text)
     || /アップデート開始を要求しました。進捗を確認してください。/i.test(text)
     || /更新のダウンロードが完了しました。再起動で適用されます。/i.test(text)
     || /アプリ更新/i.test(text);
@@ -2457,264 +2230,25 @@ function closePreviewModal(...args) { return callRendererModule('previewModal', 
 
 function goPreviewBack(...args) { return callRendererModule('previewModal', 'goBack', args); }
 
-/**
- * Reset preview inspector content to its empty state.
- */
-function resetPreviewInspector() {
-  if (domRefs.modalPreviewBox) {
-    domRefs.modalPreviewBox.innerHTML = `
-      <div class="text-gray-700">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-          <path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"/>
-          <circle cx="5" cy="14" r="3"/>
-          <path d="m9 18-1.5-1.5"/>
-        </svg>
-      </div>
-    `;
-  }
-  if (domRefs.modalPreviewFilename) domRefs.modalPreviewFilename.textContent = 'ファイルを選択';
-  if (domRefs.modalPreviewInfo) domRefs.modalPreviewInfo.textContent = '---';
-  if (domRefs.modalOpenEntryBtn) {
-    domRefs.modalOpenEntryBtn.disabled = true;
-    domRefs.modalOpenEntryBtn.onclick = null;
-  }
-  if (domRefs.importStatusBox) {
-    domRefs.importStatusBox.classList.add('hidden');
-    domRefs.importStatusBox.textContent = '';
-  }
-  setImportAcknowledgeMode(false);
-  setImportActionButtonsBusy(false);
-  setImportCloseDisabled(false);
-  resetImportProgress();
-  if (domRefs.importExecuteBtn) domRefs.importExecuteBtn.disabled = true;
-  if (domRefs.assetImportHistory) {
-    domRefs.assetImportHistory.textContent = 'Unityインポート履歴はありません。';
-  }
-}
-
-const IMAGE_FILE_EXTS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.avif', '.heic', '.heif', '.ico',
-]);
-
-function getFileExt(fileName) {
-  const n = String(fileName || '').trim().toLowerCase();
-  const idx = n.lastIndexOf('.');
-  if (idx < 0) return '';
-  return n.slice(idx);
-}
-
-function isImageFileName(fileName) {
-  return IMAGE_FILE_EXTS.has(getFileExt(fileName));
-}
-
-function shouldAutoOpenFolderForImageOnly(files) {
-  const rows = (files || []).filter((f) => f && f.kind === 'file' && getFileExt(f.name) !== '.zip');
-  if (!rows.length) return false;
-  return rows.every((f) => isImageFileName(f.name));
-}
-
-function showTransientMessage(message, tone = 'info', durationMs = 4500) {
-  const text = String(message || '').trim();
-  if (!text) return;
-  let el = state.transientMessage.el;
-  if (!el || !el.isConnected) {
-    el = document.createElement('div');
-    state.transientMessage.el = el;
-    document.body.appendChild(el);
-  }
-  const toneClass = tone === 'error' ? 'border-red-500/60 text-red-200' : 'border-emerald-500/60 text-emerald-200';
-  el.className = `fixed bottom-5 right-5 z-[100] border bg-black/90 px-3 py-2 text-[10px] font-mono-custom rounded ${toneClass}`;
-  el.textContent = text;
-  const now = Date.now();
-  const suppressToCenter = isSuppressedNotificationMessage(text);
-  const recentSame = (state.notifications || []).find((n) => (
-    n?.type === 'transient'
-    && String(n?.message || '') === text
-    && (now - new Date(String(n?.createdAt || 0)).getTime()) <= 5000
-  ));
-  const importantForCenter = isImportantTransientNotification(text, tone);
-  if (!suppressToCenter && importantForCenter && !recentSame) {
-    upsertNotificationItem({
-      id: `transient-${now}-${Math.random().toString(36).slice(2, 7)}`,
-      type: 'transient',
-      title: tone === 'error' ? 'エラー' : (tone === 'warn' ? '警告' : '通知'),
-      message: text,
-      payload: { tone: String(tone || 'info') },
-      unread: true,
-    });
-  }
-  if (state.transientMessage.timerId) {
-    clearTimeout(state.transientMessage.timerId);
-    state.transientMessage.timerId = null;
-  }
-  const wait = Number.isFinite(Number(durationMs)) ? Math.max(1200, Number(durationMs)) : 4500;
-  state.transientMessage.timerId = setTimeout(() => {
-    if (state.transientMessage.el?.isConnected) state.transientMessage.el.remove();
-    state.transientMessage.el = null;
-    state.transientMessage.timerId = null;
-  }, wait);
-}
-
-function setAppUpdateStatusUI(message, tone = 'info') {
-  if (!domRefs.settingAppUpdateStatus) return;
-  domRefs.settingAppUpdateStatus.textContent = String(message || '');
-  if (tone === 'error') {
-    domRefs.settingAppUpdateStatus.className = 'text-[10px] text-red-400 min-h-[18px]';
-  } else if (tone === 'warn') {
-    domRefs.settingAppUpdateStatus.className = 'text-[10px] text-amber-300 min-h-[18px]';
-  } else if (tone === 'success') {
-    domRefs.settingAppUpdateStatus.className = 'text-[10px] text-emerald-400 min-h-[18px]';
-  } else {
-    domRefs.settingAppUpdateStatus.className = 'text-[10px] text-zinc-500 min-h-[18px]';
-  }
-}
-
-function setAppUpdateProgressUI(percent, visible = true, textOverride = '') {
-  const wrap = domRefs.settingAppUpdateProgressWrap;
-  const bar = domRefs.settingAppUpdateProgressBar;
-  const text = domRefs.settingAppUpdateProgressText;
-  const fWrap = domRefs.appUpdateProgressFloat;
-  const fBar = domRefs.appUpdateProgressFloatBar;
-  const fText = domRefs.appUpdateProgressFloatText;
-  const p = Math.max(0, Math.min(100, Number(percent || 0)));
-  const label = String(textOverride || '').trim() || `${Math.round(p)}%`;
-  if (wrap && bar && text) {
-    wrap.classList.toggle('hidden', !visible);
-    bar.style.width = `${p}%`;
-    text.textContent = label;
-  }
-  if (fWrap && fBar && fText) {
-    fWrap.classList.toggle('hidden', !visible);
-    fBar.style.width = `${p}%`;
-    fText.textContent = label;
-  }
-}
-
-function readAppUpdateRemindState() {
-  try {
-    const raw = localStorage.getItem(APP_UPDATE_REMIND_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    return {
-      version: String(parsed.version || ''),
-      remindAt: Number(parsed.remindAt || 0),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeAppUpdateRemindState(version, remindAt) {
-  try {
-    localStorage.setItem(APP_UPDATE_REMIND_KEY, JSON.stringify({
-      version: String(version || ''),
-      remindAt: Number(remindAt || 0),
-    }));
-  } catch {
-    // ignore
-  }
-}
-
-function isAppUpdateReminderActive(version) {
-  const state = readAppUpdateRemindState();
-  if (!state) return false;
-  if (String(state.version || '') !== String(version || '')) return false;
-  return Number(state.remindAt || 0) > Date.now();
-}
-
-function normalizeAppUpdateNoteLines(releaseNotes) {
-  const raw = String(releaseNotes || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\r/g, '')
-    .trim();
-  if (!raw) return [];
-  const lines = raw.split('\n').map((v) => String(v || '').trim()).filter(Boolean);
-  const chunks = lines.flatMap((line) => line.split('。').map((v, i, arr) => {
-    const t = String(v || '').trim();
-    if (!t) return '';
-    return i < arr.length - 1 ? `${t}。` : t;
-  }));
-  return chunks
-    .map((v) => String(v || '').trim())
-    .map((v) => v.replace(/^[-*•・●◦]+\s*/, ''))
-    .map((v) => v.replace(/^\d+[.)]\s*/, ''))
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-function showAppUpdateDownloadedModal(message, version = '', releaseNotes = '') {
-  const existing = document.getElementById('app-update-done-overlay');
-  if (existing) existing.remove();
-  const noteLines = normalizeAppUpdateNoteLines(releaseNotes);
-  const normalizedVersion = String(version || '').trim();
-  const primaryMessage = String(message || '').trim() || '更新のダウンロードが完了しました。再起動で適用されます。';
-  const notesHtml = noteLines.length
-    ? `<div class="mb-4">
-      <div class="text-[11px] text-zinc-400 mb-1">更新内容</div>
-      <div class="max-h-44 overflow-auto rounded border border-white/10 bg-black/30 px-2 py-2">
-        <ul class="space-y-1 text-[11px] text-zinc-200 break-words">
-          ${noteLines.map((line) => `<li>${esc(line)}</li>`).join('')}
-        </ul>
-      </div>
-    </div>`
-    : `<div class="mb-4">
-      <div class="text-[11px] text-zinc-400 mb-1">更新内容</div>
-      <div class="rounded border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-zinc-500">-</div>
-    </div>`;
-  const overlay = document.createElement('div');
-  overlay.id = 'app-update-done-overlay';
-  overlay.className = 'fixed inset-0 z-[115] bg-black/80 flex items-center justify-center p-4';
-  overlay.innerHTML = `
-    <div class="w-full max-w-md bg-[#0a0a0a] border border-[#222] rounded p-5">
-      <h2 class="text-sm font-bold text-emerald-300 mb-2">アップデート準備完了</h2>
-      <div class="mb-4 space-y-3">
-        <div>
-          <div class="text-[11px] text-zinc-400 mb-1">完了メッセージ</div>
-          <div class="rounded border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-zinc-200">${esc(primaryMessage)}</div>
-        </div>
-        <div>
-          <div class="text-[11px] text-zinc-400 mb-1">version</div>
-          <div class="rounded border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-zinc-200 font-mono-custom">${esc(normalizedVersion || '-')}</div>
-        </div>
-      </div>
-      ${notesHtml}
-      <div class="flex justify-end gap-2">
-        <button id="app-update-remind-later" class="btn-action whitespace-nowrap">12時間後に通知</button>
-        <button id="app-update-install-now" class="btn-action btn-primary whitespace-nowrap">更新する</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.querySelector('#app-update-remind-later')?.addEventListener('click', () => {
-    const remindAt = Date.now() + (12 * 60 * 60 * 1000);
-    writeAppUpdateRemindState(version, remindAt);
-    setAppUpdateStatusUI('更新通知を12時間後に延期しました。', 'info');
-    close();
-  });
-  overlay.querySelector('#app-update-install-now')?.addEventListener('click', async () => {
-    if (!window.boothAPI?.installAppUpdateNow) {
-      setAppUpdateStatusUI('更新適用APIが利用できません。', 'error');
-      return;
-    }
-    setAppUpdateStatusUI('更新を適用しています。アプリを再起動します...', 'info');
-    try {
-      await window.boothAPI.installAppUpdateNow();
-    } catch (e) {
-      setAppUpdateStatusUI(`更新適用に失敗: ${e?.message || e}`, 'error');
-    }
-    close();
-  });
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
-}
-
+const appUpdateUi = window.AvatoolRenderAppUpdateUi.createRenderAppUpdateUi({
+  state,
+  domRefs,
+  esc,
+  isSuppressedNotificationMessage,
+  isImportantTransientNotification,
+  upsertNotificationItem: (...args) => upsertNotificationItem(...args),
+  appUpdateRemindKey: APP_UPDATE_REMIND_KEY,
+});
+const {
+  showTransientMessage,
+  setAppUpdateStatusUI,
+  setAppUpdateProgressUI,
+  readAppUpdateRemindState,
+  writeAppUpdateRemindState,
+  isAppUpdateReminderActive,
+  normalizeAppUpdateNoteLines,
+  showAppUpdateDownloadedModal,
+} = appUpdateUi;
 function renderOperationLogs(...args) { return callRendererModule('settingsTools', 'renderOperationLogs', args); }
 
 function pushOperationLog(entry) {
@@ -2900,148 +2434,13 @@ async function requireSafeModeConfirm(message) {
   });
 }
 
-function setupDebugConsoleBridge() {
-  let allowDebug = Boolean(state.settings?.debugLogEnabled);
-  try {
-    const q = new URLSearchParams(window.location.search || '');
-    allowDebug = allowDebug || q.get('debug') === '1' || localStorage.getItem('avatool_debug_console') === '1';
-  } catch {
-    allowDebug = Boolean(state.settings?.debugLogEnabled);
-  }
-  if (!allowDebug) {
-    try {
-      if (window.__boothDebug) {
-        delete window.__boothDebug;
-        delete window.__boothDebugVersion;
-      }
-    } catch {
-      // ignore cleanup failures
-    }
-    return;
-  }
-
-  const sanitizeAvatarAnalysisAsset = (asset) => {
-    const analysis = asset?.supportedAvatarAnalysis && typeof asset.supportedAvatarAnalysis === 'object'
-      ? asset.supportedAvatarAnalysis
-      : null;
-    const candidates = Array.isArray(analysis?.candidates)
-      ? analysis.candidates.map((row) => ({
-        name: String(row?.name || ''),
-        score: Number(row?.score || 0),
-        reasons: Array.isArray(row?.reasons) ? row.reasons.map((r) => String(r || '')).filter(Boolean) : [],
-      }))
-      : [];
-    return {
-      itemId: String(asset?.itemId || ''),
-      title: String(asset?.title || ''),
-      isAvatarItem: Boolean(asset?.isAvatarItem),
-      downloaded: Boolean(asset?.downloaded),
-      primaryCategory: getCategoryDisplayText(asset?.primaryCategory, ''),
-      supportedAvatars: Array.isArray(asset?.supportedAvatars) ? asset.supportedAvatars.filter(Boolean) : [],
-      supportedAvatarsInferred: Array.isArray(asset?.supportedAvatarsInferred) ? asset.supportedAvatarsInferred.filter(Boolean) : [],
-      avatarAnalysisCheckedAt: asset?.avatarAnalysisCheckedAt || null,
-      analysis: analysis ? {
-        status: String(analysis.status || ''),
-        primaryAvatar: String(analysis.primaryAvatar || ''),
-        candidateCount: candidates.length,
-        candidates,
-      } : null,
-    };
-  };
-
-  const api = window.boothAPI || {};
-  const debugApi = {
-    help() {
-      return [
-        '__boothDebug.help()',
-        '__boothDebug.state()',
-        '__boothDebug.avatarAnalysis(itemId?)',
-        '__boothDebug.avatarLogs(limit?)',
-        '__boothDebug.scanPackage(pkgPath, candidateTokens?)',
-        '__boothDebug.getImportHistory(itemId)',
-        '__boothDebug.getProjectItems(projectPath)',
-        '__boothDebug.importWithMeta(projectPath, packages)',
-        '__boothDebug.importPaths(projectPath, packagePaths)',
-        '__boothDebug.openAsset(itemId)',
-      ];
-    },
-    state() {
-      return {
-        assets: state.allAssets.length,
-        selectedItems: Array.from(state.selectedItems),
-        currentCategory: state.currentCategory,
-        viewFilter: state.viewFilter,
-        queue: state.queue,
-        modal: {
-          selectedAssetId: state.modal?.selectedAsset?.itemId || null,
-          currentPath: state.modal?.currentPath || '',
-        },
-      };
-    },
-    avatarAnalysis(itemId = '') {
-      const key = String(itemId || '').trim();
-      if (key) {
-        const asset = getAssetByItemId(key);
-        if (!asset) throw new Error('asset_not_found');
-        return sanitizeAvatarAnalysisAsset(asset);
-      }
-      return (Array.isArray(state.allAssets) ? state.allAssets : [])
-        .filter((asset) => (
-          asset?.supportedAvatarAnalysis
-          || (Array.isArray(asset?.supportedAvatarsInferred) && asset.supportedAvatarsInferred.length)
-          || String(asset?.avatarAnalysisCheckedAt || '').trim()
-        ))
-        .map(sanitizeAvatarAnalysisAsset);
-    },
-    async avatarLogs(limit = 80) {
-      if (!api.getRuntimeLogs) throw new Error('getRuntimeLogs API unavailable');
-      const res = await api.getRuntimeLogs();
-      if (!res?.ok) throw new Error(res?.error || 'get_runtime_logs_failed');
-      const rows = Array.isArray(res.logs) ? res.logs : [];
-      const filtered = rows.filter((row) => {
-        const msg = String(row?.message || '');
-        return msg.includes('[AVATAR-DEBUG]') || msg.includes('avatar-analysis') || msg.includes('avatar-score-breakdown');
-      });
-      return filtered.slice(-Math.max(1, Math.min(500, Number(limit) || 80)));
-    },
-    async scanPackage(pkgPath, candidateTokens = []) {
-      if (!api.scanUnityPackage) throw new Error('scanUnityPackage API unavailable');
-      return await api.scanUnityPackage(pkgPath, candidateTokens);
-    },
-    async getImportHistory(itemId) {
-      if (!api.getImportHistory) throw new Error('getImportHistory API unavailable');
-      return await api.getImportHistory(itemId);
-    },
-    async getProjectItems(projectPath) {
-      if (!api.getProjectItems) throw new Error('getProjectItems API unavailable');
-      return await api.getProjectItems(projectPath);
-    },
-    async reconcileImports(projectPath, packages, persistMatched = true, threshold = 0.6) {
-      if (!api.reconcileImports) throw new Error('reconcileImports API unavailable');
-      return await api.reconcileImports(projectPath, packages, persistMatched, threshold);
-    },
-    async importWithMeta(projectPath, packages) {
-      if (!api.importMultipleToUnityWithMeta) throw new Error('importMultipleToUnityWithMeta API unavailable');
-      return await api.importMultipleToUnityWithMeta(projectPath, packages);
-    },
-    async importPaths(projectPath, packagePaths) {
-      if (!api.importMultipleToUnity) throw new Error('importMultipleToUnity API unavailable');
-      return await api.importMultipleToUnity(projectPath, packagePaths);
-    },
-    async openAsset(itemId) {
-      const found = getAssetByItemId(itemId);
-      if (!found) throw new Error('asset_not_found');
-      await openPreviewModal(found);
-      return { ok: true, itemId: found.itemId, title: found.title };
-    },
-  };
-
-  window.__boothDebug = debugApi;
-  window.__boothDebugVersion = '1.1.0';
-  console.info('[booth-debug] ready:', debugApi.help());
-}
-
-window.setupDebugConsoleBridge = setupDebugConsoleBridge;
+const debugConsoleBridge = window.AvatoolRenderDebugConsoleBridge.createRenderDebugConsoleBridge({
+  state,
+  getAssetByItemId,
+  openPreviewModal: (...args) => openPreviewModal(...args),
+  getCategoryDisplayText,
+});
+const { setupDebugConsoleBridge } = debugConsoleBridge;
 
 async function markAssetUpdateSeen(asset) {
   if (!asset?.hasUpdate || !window.boothAPI?.markUpdateSeen) return;
@@ -3120,31 +2519,6 @@ function renderProjectItemsProjectSelect(...args) { return callRendererModule('p
 async function loadProjectItemsPanel(...args) { return callRendererModule('projectItems', 'loadProjectItemsPanel', args); }
 
 function setProjectItemsProgress(...args) { return callRendererModule('projectItems', 'setProjectItemsProgress', args); }
-
-async function collectReconcilePackagesFromAssets(onProgress) {
-  const targets = (state.allAssets || []).filter((a) => a.downloaded);
-  const rows = [];
-  for (let i = 0; i < targets.length; i++) {
-    const asset = targets[i];
-    const res = await window.boothAPI.listItemFiles(asset.itemId, asset.title || '');
-    if (!res?.error && Array.isArray(res?.files)) {
-      const tokens = buildCandidateTokens(asset);
-      const found = res.files
-        .filter((f) => f.kind === 'file' && String(f.name || '').toLowerCase().endsWith('.unitypackage'))
-        .map((f) => ({
-          itemId: String(asset.itemId || ''),
-          title: String(asset.title || ''),
-          packagePath: String(f.fullPath || ''),
-          candidateTokens: tokens,
-        }));
-      rows.push(...found);
-    }
-    if (typeof onProgress === 'function') {
-      onProgress(i + 1, targets.length);
-    }
-  }
-  return rows.filter((r) => r.itemId && r.packagePath);
-}
 
 async function runProjectItemsReconcile(...args) { return callRendererModule('projectItems', 'runProjectItemsReconcile', args); }
 
@@ -3812,7 +3186,7 @@ function setupKeyboardShortcuts() {
       return;
     }
 
-    await rendererModules.auxUi?.handleGlobalShortcutEvent?.(e);
+    await getRendererModule('auxUi')?.handleGlobalShortcutEvent?.(e);
   });
 }
 
@@ -3886,7 +3260,7 @@ function wireRendererModules() {
     isTypingTarget,
     eventMatchesShortcut,
     clearSelectionMode,
-    renderGrid,
+    renderGrid: (...args) => renderGrid(...args),
     logShortcutDebug,
     upsertNotificationItem,
     showConfirmModal,
@@ -3977,7 +3351,7 @@ function wireRendererModules() {
     validateShortcutMap,
     applyShortcutValidationUi,
     persistRenderModeSetting,
-    renderGrid,
+    renderGrid: (...args) => renderGrid(...args),
     showTransientMessage,
     resetMetaProgressState,
     initializeApp,
@@ -4028,7 +3402,7 @@ function wireRendererModules() {
     enableKeyboardActivation,
     showTransientMessage,
     clearSelectionMode,
-    renderGrid,
+    renderGrid: (...args) => renderGrid(...args),
     setImportProgress,
     resetImportProgress,
     setImportPhase,
@@ -4064,7 +3438,7 @@ function wireRendererModules() {
     closePackageSelectionModal,
     markAssetUpdateSeen,
     setAssetsFromMap,
-    renderGrid,
+    renderGrid: (...args) => renderGrid(...args),
     showTransientMessage,
     setImportAcknowledgeMode,
     setImportActionButtonsBusy,
@@ -4132,7 +3506,7 @@ function wireRendererModules() {
     syncAvatarFilterUI,
     normalizeAvatarFilterValue,
     hasAvatarDetailedAnalysisResult,
-    showAvatarFilterAnalysisPromptModal,
+    showAvatarFilterAnalysisPromptModal: (...args) => showAvatarFilterAnalysisPromptModal(...args),
     applyViewFilter,
     openImportForAssetAction: openImportForAsset,
     handleDownloadAction: handleDownload,
@@ -4162,7 +3536,7 @@ function wireRendererModules() {
     domRefs,
     boothAPI: window.boothAPI,
     getAssetByItemId,
-    getTileEntryByItemId,
+    getTileEntryByItemId: (...args) => getTileEntryByItemId(...args),
     refreshVisibleTileActionStates,
     syncDownloadStateFromLatestMapNoRerender,
     markAssetUpdateSeen,
