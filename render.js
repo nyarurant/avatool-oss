@@ -432,6 +432,28 @@ const domRefs = {
   wishlistImportProgress: document.getElementById('wishlist-import-progress'),
 };
 
+const prefsFormatUtils = window.AvatoolRenderPrefsFormatUtils.createRenderPrefsFormatUtils({
+  getState: () => state,
+  icons: ICONS,
+  parseSortableDateMs: (...args) => parseSortableDateMs(...args),
+});
+const {
+  isAvatarDebugEnabled,
+  logAvatarDebug,
+  logShortcutDebug,
+  loadViewModePreference,
+  loadSortModePreference,
+  persistSortModePreference,
+  persistViewModePreference,
+  getRenderModeSetting,
+  persistRenderModeSetting,
+  formatDate,
+  esc,
+  getIconForFile,
+  isImageFile,
+  pathBasename,
+} = prefsFormatUtils;
+
 // ========== Application State ==========
 
 const state = {
@@ -528,87 +550,9 @@ const QUEUE_STATUS_FLUSH_MS = 180;
 let getLastQueueSettledAt = () => 0;
 
 let avatarDebugLastSignature = '';
-let avatarDebugEnabledCache = null;
 let avatarFilterGlobalDismissBound = false;
 
-function isAvatarDebugEnabled() {
-  if (state.settings && Object.prototype.hasOwnProperty.call(state.settings, 'debugLogEnabled')) {
-    return Boolean(state.settings.debugLogEnabled);
-  }
-  if (avatarDebugEnabledCache !== null) return avatarDebugEnabledCache;
-  try {
-    const raw = String(localStorage.getItem('AVATOOL_DEBUG_VERBOSE') || '').trim().toLowerCase();
-    avatarDebugEnabledCache = raw === '1' || raw === 'true' || raw === 'on';
-    return avatarDebugEnabledCache;
-  } catch {
-    avatarDebugEnabledCache = false;
-    return false;
-  }
-}
-
-function logAvatarDebug(message, payload = null) {
-  if (!isAvatarDebugEnabled()) return;
-  try {
-    if (payload && typeof payload === 'object') {
-      console.log(`[AVATAR-DEBUG] ${message}`, payload);
-    } else {
-      console.log(`[AVATAR-DEBUG] ${message}`);
-    }
-  } catch {
-    // ignore logging failures
-  }
-}
-
 // ========== Utility Functions ==========
-
-function loadViewModePreference() {
-  try {
-    const raw = localStorage.getItem('assetViewMode');
-    if (raw === 'list' || raw === 'grid') return raw;
-  } catch {
-    // ignore
-  }
-  return 'grid';
-}
-
-function loadSortModePreference() {
-  const valid = ['date_desc', 'date_asc', 'name_asc', 'size_desc'];
-  try {
-    const raw = localStorage.getItem('assetSortMode');
-    if (valid.includes(raw)) return raw;
-  } catch {
-    // ignore
-  }
-  return 'date_desc';
-}
-
-function persistSortModePreference(mode) {
-  try {
-    localStorage.setItem('assetSortMode', mode);
-  } catch {
-    // ignore
-  }
-}
-
-function persistViewModePreference(mode) {
-  try {
-    localStorage.setItem('assetViewMode', mode === 'list' ? 'list' : 'grid');
-  } catch {
-    // ignore
-  }
-}
-
-function getRenderModeSetting() {
-  const fromSettings = String(state.settings?.renderMode || '').trim().toLowerCase();
-  if (fromSettings === 'instant' || fromSettings === 'progressive') return fromSettings;
-  try {
-    const fromStorage = String(localStorage.getItem('assetRenderMode') || '').trim().toLowerCase();
-    if (fromStorage === 'instant' || fromStorage === 'progressive') return fromStorage;
-  } catch {
-    // ignore
-  }
-  return 'progressive';
-}
 
 function parseSortableDateMs(raw) {
   if (raw == null) return null;
@@ -649,31 +593,6 @@ function compareAssetsByAddedDateDesc(a, b) {
   return 0;
 }
 
-function persistRenderModeSetting(mode) {
-  const next = String(mode || '').trim().toLowerCase() === 'instant' ? 'instant' : 'progressive';
-  try {
-    localStorage.setItem('assetRenderMode', next);
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * Format a date/time value for UI display.
- */
-function formatDate(raw) {
-  if (!raw || raw === 'Unknown') return '不明';
-  const ms = parseSortableDateMs(raw);
-  if (ms === null) return raw;
-  const d = new Date(ms);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${y}.${m}.${day} ${hh}:${mm}`;
-}
-
 function formatWishlistCardPrice(asset) {
   const min = Number(asset?.priceMin ?? asset?.price);
   const max = Number(asset?.priceMax ?? asset?.price);
@@ -698,15 +617,6 @@ function createWishlistPriceChip(asset, compact = false) {
   return chip;
 }
 
-function esc(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 const importProgressUi = window.AvatoolRenderImportProgressUi.createRenderImportProgressUi({
   domRefs,
   state,
@@ -720,156 +630,29 @@ const {
   setImportPhase,
 } = importProgressUi;
 
-function isKeyboardActivationEvent(e) {
-  return e.key === 'Enter' || e.key === ' ';
-}
-
-function enableKeyboardActivation(el, onActivate) {
-  if (!el || typeof onActivate !== 'function') return;
-  el.addEventListener('keydown', (e) => {
-    if (!isKeyboardActivationEvent(e)) return;
-    e.preventDefault();
-    onActivate(e);
-  });
-}
-
-function isElementShown(el) {
-  if (!el || !el.isConnected) return false;
-  if (el.classList?.contains('hidden')) return false;
-  const style = window.getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden';
-}
-
-function isTypingTarget(target) {
-  const el = target instanceof Element ? target : null;
-  if (!el) return false;
-  if (el.closest('input, textarea, select, [contenteditable="true"]')) return true;
-  const active = document.activeElement;
-  if (!(active instanceof Element)) return false;
-  return Boolean(active.closest('input, textarea, select, [contenteditable="true"]'));
-}
-
-function getShortcutMap() {
-  const out = { ...DEFAULT_SHORTCUTS };
-  const incoming = state.settings?.keyboardShortcuts;
-  if (incoming && typeof incoming === 'object') {
-    for (const key of Object.keys(DEFAULT_SHORTCUTS)) {
-      if (Object.prototype.hasOwnProperty.call(incoming, key)) {
-        out[key] = sanitizeShortcutSpec(incoming[key], DEFAULT_SHORTCUTS[key]);
-      }
-    }
-  }
-  return out;
-}
-
-function renderShortcutEditor(shortcuts) {
-  if (!domRefs.settingShortcutsEditor) return;
-  const values = shortcuts || getShortcutMap();
-  domRefs.settingShortcutsEditor.innerHTML = '';
-  state.shortcutCaptureKey = '';
-  state.shortcutCaptureButton = null;
-  SHORTCUT_FIELD_DEFS.forEach((def) => {
-    const row = document.createElement('div');
-    row.className = 'shortcut-row';
-    const label = document.createElement('div');
-    label.className = 'text-[10px] text-zinc-300';
-    label.textContent = def.hint ? `${def.label} (${def.hint})` : def.label;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'panel-input font-mono-custom text-[11px]';
-    input.placeholder = DEFAULT_SHORTCUTS[def.key] || '';
-    input.value = sanitizeShortcutSpec(values[def.key], DEFAULT_SHORTCUTS[def.key]);
-    input.dataset.shortcutKey = def.key;
-    input.readOnly = true;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn-action !px-3';
-    btn.textContent = 'Change';
-    btn.dataset.shortcutAssignKey = def.key;
-    btn.addEventListener('click', () => {
-      beginShortcutCapture(def.key, btn);
-    });
-    row.appendChild(label);
-    row.appendChild(input);
-    row.appendChild(btn);
-    domRefs.settingShortcutsEditor.appendChild(row);
-  });
-  refreshShortcutValidationUi();
-}
-
-function readShortcutEditorValue() {
-  const out = {};
-  for (const key of Object.keys(DEFAULT_SHORTCUTS)) {
-    out[key] = DEFAULT_SHORTCUTS[key];
-  }
-  const container = domRefs.settingShortcutsEditor;
-  if (!container) return out;
-  container.querySelectorAll('input[data-shortcut-key]').forEach((el) => {
-    const key = String(el.dataset.shortcutKey || '');
-    if (!Object.prototype.hasOwnProperty.call(DEFAULT_SHORTCUTS, key)) return;
-    out[key] = sanitizeShortcutSpec(el.value, DEFAULT_SHORTCUTS[key]);
-  });
-  return out;
-}
-
-function stopShortcutCapture() {
-  const btn = state.shortcutCaptureButton;
-  if (btn && btn.isConnected) {
-    btn.textContent = 'Change';
-    btn.classList.remove('bg-amber-600', 'hover:bg-amber-500', 'text-white');
-  }
-  state.shortcutCaptureKey = '';
-  state.shortcutCaptureButton = null;
-}
-
-function beginShortcutCapture(shortcutKey, buttonEl) {
-  stopShortcutCapture();
-  state.shortcutCaptureKey = String(shortcutKey || '');
-  state.shortcutCaptureButton = buttonEl || null;
-  if (buttonEl) {
-    buttonEl.textContent = 'キー待機中...';
-    buttonEl.classList.add('bg-amber-600', 'hover:bg-amber-500', 'text-white');
-  }
-}
-function validateShortcutMap(shortcuts) {
-  return validateShortcutMapWithDefs(shortcuts, SHORTCUT_FIELD_DEFS, RESERVED_SHORTCUTS);
-}
-
-function applyShortcutValidationUi(result) {
-  state.shortcutValidation = result || { duplicates: [], reservedHits: [] };
-  const container = domRefs.settingShortcutsEditor;
-  if (container) {
-    container.querySelectorAll('.shortcut-row').forEach((row) => {
-      row.classList.remove('border', 'border-red-500/60', 'rounded-lg', 'bg-red-900/10');
-    });
-    const markKey = (k) => {
-      const row = container.querySelector(`input[data-shortcut-key="${k}"]`)?.closest('.shortcut-row');
-      if (!row) return;
-      row.classList.add('border', 'border-red-500/60', 'rounded-lg', 'bg-red-900/10');
-    };
-    (result?.duplicates || []).forEach((group) => group.forEach((k) => markKey(k)));
-    (result?.reservedHits || []).forEach((r) => markKey(r.key));
-  }
-  if (!domRefs.settingShortcutsWarning) return;
-  const msgs = [];
-  if (result?.duplicates?.length) {
-    msgs.push(`重複: ${result.duplicates.length} 件`);
-  }
-  if (result?.reservedHits?.length) {
-    msgs.push(`予約キー: ${result.reservedHits.length} 件`);
-  }
-  if (!msgs.length) {
-    domRefs.settingShortcutsWarning.textContent = '重複・予約キーの問題はありません。';
-    domRefs.settingShortcutsWarning.className = 'text-[10px] text-emerald-300 min-h-[16px]';
-    return;
-  }
-  domRefs.settingShortcutsWarning.textContent = msgs.join(' / ');
-  domRefs.settingShortcutsWarning.className = 'text-[10px] text-amber-300 min-h-[16px]';
-}
-
-function refreshShortcutValidationUi() {
-  applyShortcutValidationUi(validateShortcutMap(readShortcutEditorValue()));
-}
+const shortcutEditorUi = window.AvatoolRenderShortcutEditorUi.createRenderShortcutEditorUi({
+  state,
+  domRefs,
+  sanitizeShortcutSpec,
+  defaultShortcuts: DEFAULT_SHORTCUTS,
+  shortcutFieldDefs: SHORTCUT_FIELD_DEFS,
+  reservedShortcuts: RESERVED_SHORTCUTS,
+  validateShortcutMapWithDefs,
+});
+const {
+  isKeyboardActivationEvent,
+  enableKeyboardActivation,
+  isElementShown,
+  isTypingTarget,
+  getShortcutMap,
+  renderShortcutEditor,
+  readShortcutEditorValue,
+  stopShortcutCapture,
+  beginShortcutCapture,
+  validateShortcutMap,
+  applyShortcutValidationUi,
+  refreshShortcutValidationUi,
+} = shortcutEditorUi;
 
 function showShortcutsTutorialOverlay(...args) {
   return callRendererModule('auxUi', 'showShortcutsTutorialOverlay', args);
@@ -904,29 +687,6 @@ function renderImportHistoryInModal(history) {
     `;
     domRefs.assetImportHistory.appendChild(line);
   });
-}
-
-/**
- * Pick an icon that matches the file extension.
- */
-function getIconForFile(filename) {
-  const ext = (filename.split('.').pop() || '').toLowerCase();
-  if (['unitypackage', 'unity', 'prefab', 'mat'].includes(ext)) return ICONS.unity;
-  if (['blend', 'blend1'].includes(ext)) return ICONS.blender;
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'tga', 'psd', 'bmp'].includes(ext)) return ICONS.image;
-  if (['fbx', 'vrm', 'obj', 'glb', 'gltf'].includes(ext)) return ICONS.model;
-  if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) return ICONS.audio;
-  if (['zip', 'rar', '7z', 'tar'].includes(ext)) return ICONS.archive;
-  if (['txt', 'md', 'json', 'html', 'css', 'js', 'pdf'].includes(ext)) return ICONS.text;
-  return ICONS.file;
-}
-
-/**
- * Return true when the file should be treated as an image.
- */
-function isImageFile(name) {
-  const lower = (name || '').toLowerCase();
-  return lower.match(/\.(png|jpg|jpeg|gif|webp|tga|bmp)$/);
 }
 
 const storageUsageUi = window.AvatoolRenderStorageUsageUi.createRenderStorageUsageUi({
@@ -2526,13 +2286,6 @@ async function openProjectItemsModal(...args) { return callRendererModule('proje
 
 function closeProjectItemsModal(...args) { return callRendererModule('projectItems', 'closeProjectItemsModal', args); }
 
-function pathBasename(p) {
-  const norm = String(p || '').replace(/\\/g, '/');
-  if (!norm) return '';
-  const parts = norm.split('/');
-  return parts[parts.length - 1] || '';
-}
-
 async function loadVCCProjectsIntoSettings(...args) { return callRendererModule('settingsTools', 'loadVCCProjectsIntoSettings', args); }
 
 async function saveSettingsFromModal(...args) { return callRendererModule('settingsTools', 'saveSettingsFromModal', args); }
@@ -2865,12 +2618,6 @@ function syncAvatarFilterUI() {
   if (button) {
     button.classList.toggle('border-blue-500/50', Boolean(filters.length));
   }
-}
-
-function logShortcutDebug(message, payload = null) {
-  if (!isAvatarDebugEnabled()) return;
-  if (window.logger?.log) window.logger.log(message, payload);
-  else console.log(message, payload);
 }
 
 function ensureAvatarFilterSelect() {
