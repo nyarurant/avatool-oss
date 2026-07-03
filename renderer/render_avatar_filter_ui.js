@@ -163,10 +163,18 @@
       const select = ensureAvatarFilterSelect();
       if (!select) return;
 
+      // Wishlist-only (unpurchased) items must not contribute avatar names to the
+      // filter pool — otherwise avatars the user has merely wishlisted (not bought)
+      // show up as filterable options.
+      const purchasedOnly = (Array.isArray(assets) ? assets : []).filter((a) => {
+        const hasRealContent = Boolean(a?.downloaded) || Boolean(a?.files && a.files.length);
+        return hasRealContent || (!a?.isWishlisted && !a?.wishlistAddedAt);
+      });
+
       // Build a normalization map: for avatar items whose pool is Latin-only, map the
       // Latin name → Japanese nameVariant so both sides collapse to one filter entry.
       const avatarLatinToJaMap = new Map();
-      for (const asset of (Array.isArray(assets) ? assets : [])) {
+      for (const asset of purchasedOnly) {
         if (!asset?.isAvatarItem) continue;
         const nv = asset.nameVariants || {};
         const jaName = String(
@@ -182,7 +190,7 @@
       }
 
       const allNames = [];
-      for (const asset of (Array.isArray(assets) ? assets : [])) {
+      for (const asset of purchasedOnly) {
         for (const n of getAssetAvatarPool(asset)) {
           allNames.push(avatarLatinToJaMap.get(n) || n);
         }
