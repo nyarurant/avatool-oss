@@ -21,6 +21,9 @@ const { createUnityManager } = require('./lib/unity_manager');
 const { createVpmManager } = require('./lib/vpm_manager');
 const { createMetaManager } = require('./lib/meta_manager');
 const { createWishlistService } = require('./lib/wishlist_service');
+const { createDesktopNotifications } = require('./lib/desktop_notifications');
+const { createBoothCartService } = require('./lib/booth_cart_service');
+const { createBoothItemEnrichment } = require('./lib/booth_item_enrichment');
 const { createUiProbeService } = require('./lib/ui_probe_service');
 const { createDownloadQueue } = require('./lib/download_queue');
 const { ensureWindowsStartupRegistration, setupSingleInstanceLock, runBoothSmokeTest } = require('./lib/app_bootstrap');
@@ -31,7 +34,7 @@ const { createStorageManager } = require('./lib/storage_manager');
 const { createHealthCheckService } = require('./lib/health_check_service');
 const { createWindowManager } = require('./lib/window_manager');
 const { createSchedulerService } = require('./lib/scheduler_service');
-const { toFiniteNumber, normalizeHour, normalizeRetryAttempts, normalizeRetryBaseDelayMs, normalizeZipMaxEntryBytes, sanitizePathSegment, safeResolveUnder, dedupeDownloadLinks: dedupeDownloadLinksUtil, isWithinHourWindow } = require('./lib/utils');
+const { toFiniteNumber, normalizeHour, normalizeRetryAttempts, normalizeRetryBaseDelayMs, normalizeZipMaxEntryBytes, sanitizePathSegment, safeResolveUnder, dedupeDownloadLinks: dedupeDownloadLinksUtil, isWithinHourWindow, getCpuCount, resolveAppDataRoot: utilsResolveAppDataRoot } = require('./lib/utils');
 const {
   createClientAndCookies,
   downloadItemFiles,
@@ -58,9 +61,7 @@ const {
   syncAvatarItemsToFile,
   fixAvatarItemFields,
   fetchItemPricePublic,
-  _test: {
-    enrichItemAvatarMetadata,
-  },
+  enrichItemAvatarMetadata,
 } = require('./lib/booth_meta_fetcher');
 const { runWishlistPriceCheck } = require('./lib/wishlist_price_checker');
 const { searchBoothItems, fetchBoothItemDetail, fetchBoothHomeSections, fetchBoothRelatedItems } = require('./lib/booth_search');
@@ -78,23 +79,11 @@ let boothClient = null;
 let boothCookies = null;
 let didStartupNewItemCheck = false;
 let startupMetaRefreshPromise = null;
-let postLoginRefreshPromise = null;
 let rendererBootSessionId = 0;
 let rendererReady = false;
 let rendererFatalState = null;
 const LEGACY_APP_ROOT = __dirname;
-function resolveAppDataRoot() {
-  const fromEnv = String(process.env.AVATOOL_DATA_DIR || '').trim();
-  if (fromEnv) return path.resolve(fromEnv);
-  try {
-    const userData = app.getPath('userData');
-    if (userData) return path.join(userData, 'data');
-  } catch {
-    // ignore
-  }
-  return path.join(LEGACY_APP_ROOT, '.data');
-}
-const APP_DATA_ROOT = resolveAppDataRoot();
+const APP_DATA_ROOT = utilsResolveAppDataRoot({ app, legacyAppRoot: LEGACY_APP_ROOT });
 process.env.AVATOOL_DATA_DIR = APP_DATA_ROOT;
 setDownloaderDataRoot(APP_DATA_ROOT);
 setMetaFetcherDataRoot(APP_DATA_ROOT);
@@ -622,84 +611,12 @@ function emitAutoBootstrapStatus(payload) {
   sender.send('auto-bootstrap-status', payload);
 }
 
-function showDesktopNotification(title, body, imageUrl) {
-  try {
-    const supported = Boolean(Notification && Notification.isSupported?.());
-    console.log('[NOTIFY][main]', `supported=${supported}`, String(title || ''), String(body || ''));
-    if (!supported) return false;
-    const opts = {
-      title: String(title || 'Avatool'),
-      body: String(body || ''),
-      silent: false,
-    };
-    let imgSrc = null;
-    if (typeof imageUrl === 'string' && imageUrl) {
-      if (imageUrl.startsWith('https://')) {
-        imgSrc = imageUrl;
-      } else if (imageUrl.startsWith('file:///')) {
-        imgSrc = imageUrl;
-      } else if (imageUrl.length > 0) {
-        // ローカルファイルパスを file:// URI に変換
-        imgSrc = 'file:///' + imageUrl.replace(/\\/g, '/');
-      }
-    }
-    if (imgSrc && process.platform === 'win32') {
-      const esc = (s) => String(s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      opts.toastXml = [
-        '<toast duration="long">',
-        '<visual><binding template="ToastGeneric">',
-        `<text>${esc(opts.title)}</text>`,
-        `<text>${esc(opts.body)}</text>`,
-        `<image src="${esc(imgSrc)}"/>`,
-        '</binding></visual>',
-        '</toast>',
-      ].join('');
-    }
-    const n = new Notification(opts);
-    n.show();
-    return true;
-  } catch (e) {
-    console.warn('[notify] failed:', e?.message || e);
-    return false;
-  }
-}
-
-function formatElapsedMs(ms) {
-  const n = Math.max(0, Number(ms || 0));
-  const totalSec = Math.floor(n / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m <= 0) return `${s}秒`;
-  return `${m}分${s}秒`;
-}
-
-function sendDesktopNotificationForAutoBootstrap(payload) {
-  const phase = String(payload?.phase || '').trim();
-  const source = String(payload?.source || '').trim();
-  const projectName = path.basename(String(payload?.projectPath || '').trim()) || 'Project';
-  const msg = String(payload?.message || '').trim();
-  const elapsedMs = Number(payload?.elapsedMs || 0);
-  const elapsedText = elapsedMs > 0 ? ` (所要時間: ${formatElapsedMs(elapsedMs)})` : '';
-  const isStartup = source === 'startup';
-  // Startup auto-download status is surfaced in-app via renderer messages only.
-  if (isStartup) return;
-  if (phase === 'started') {
-    showDesktopNotification('自動インポート開始', `${projectName}: 自動インポートが作動中です。インポートと初期コンパイルを実行します。処理完了までこのプロジェクトを開かないでください。`);
-    return;
-  }
-  if (phase === 'done') {
-    showDesktopNotification('自動インポート完了', msg || `${projectName}: 自動インポートが完了しました。${elapsedText}`);
-    return;
-  }
-  if (phase === 'skipped') {
-    showDesktopNotification('自動インポートスキップ', msg || `${projectName}: 自動インポートはスキップされました。${elapsedText}`);
-    return;
-  }
-  if (phase === 'error') {
-    showDesktopNotification('自動インポート失敗', msg || `${projectName}: 自動インポートに失敗しました。${elapsedText}`);
-  }
-}
+const desktopNotifications = createDesktopNotifications({ Notification, path });
+const {
+  showDesktopNotification,
+  formatElapsedMs,
+  sendDesktopNotificationForAutoBootstrap,
+} = desktopNotifications;
 
 function loadAutoBootstrapHistory() {
   try {
@@ -724,21 +641,6 @@ function listUnityPackagesInDir(rootDir) {
 
 function listSourceImportRootsInDir(itemDir) {
   return unityMgr.listSourceImportRootsInDir(itemDir);
-}
-
-function backupCorruptedJson(filePath, rawText = '') {
-  try {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dst = `${filePath}.corrupt.${stamp}.json`;
-    if (fs.existsSync(filePath)) {
-      fs.renameSync(filePath, dst);
-      return dst;
-    }
-    fs.writeFileSync(dst, String(rawText || ''), 'utf8');
-    return dst;
-  } catch {
-    return '';
-  }
 }
 
 function isVpmPackageDir(dirPath) {
@@ -837,6 +739,43 @@ async function listAutoBootstrapVariantOptions() {
   return autoBootstrapService.listAutoBootstrapVariantOptions();
 }
 
+const boothSessionMgr = createBoothSessionManager({
+  axios,
+  path,
+  writeBoothCookiesToFile,
+  defaultCookieFilePath: DEFAULT_SETTINGS.cookieFile,
+  tempCookiePath: TEMP_COOKIE_PATH,
+  getBoothClient: () => boothClient,
+  setBoothClient: (v) => { boothClient = v; },
+  getBoothCookies: () => boothCookies,
+  setBoothCookies: (v) => { boothCookies = v; },
+  getSettings: () => settings,
+  getMainWindow: () => mainWindow,
+  getLoginWindowMgr: () => loginWindowMgr,
+  getRefreshMetaAfterLoginDedup: () => refreshMetaAfterLoginDedup,
+});
+const {
+  isMissingBoothCookieFileError,
+  isRecoverableBoothCookieError,
+  runWithBoothCookieLoginFallback,
+} = boothSessionMgr;
+
+const storageMgr = createStorageManager({
+  fs,
+  path,
+  getSettings: () => settings,
+  CACHE_DIR,
+  AUTHOR_ICON_DIR,
+  UNITY_LOG_DIR,
+  META_PATH,
+  SETTINGS_PATH,
+  IMPORT_LOG_PATH,
+  RECONCILE_LOG_PATH,
+  AVATARS_PATH,
+  APP_DATA_ROOT,
+  sanitizePathSegment,
+});
+
 const autoBootstrapService = createAutoBootstrapService({
   getSettings: () => settings,
   fs,
@@ -900,17 +839,6 @@ function enqueueAutoBootstrap(projectPath, source = 'watch') {
   autoBootstrapService.enqueueAutoBootstrap(projectPath, source);
 }
 
-const boothSessionMgr = createBoothSessionManager({
-  axios,
-  writeBoothCookiesToFile,
-  defaultCookieFilePath: DEFAULT_SETTINGS.cookieFile,
-  tempCookiePath: TEMP_COOKIE_PATH,
-  getBoothClient: () => boothClient,
-  setBoothClient: (v) => { boothClient = v; },
-  getBoothCookies: () => boothCookies,
-  setBoothCookies: (v) => { boothCookies = v; },
-});
-
 function normalizeBoothCookies(cookies) {
   return boothSessionMgr.normalizeBoothCookies(cookies);
 }
@@ -944,13 +872,7 @@ async function probeBoothLibrary(cookies) {
 }
 
 function ensureRuntimeDirs() {
-  try {
-    if (!fs.existsSync(settings.downloadPath)) {
-      fs.mkdirSync(settings.downloadPath, { recursive: true });
-    }
-  } catch (e) {
-    console.warn('Failed to ensure runtime dirs:', e?.message || e);
-  }
+  return storageMgr.ensureRuntimeDirs();
 }
 
 ensureAppDataRootExists();
@@ -968,44 +890,7 @@ ensureRuntimeDirs();
 let queueSender = null;
 
 function buildItemDir(itemId, title) {
-  const safeItemId = sanitizePathSegment(itemId, 'NO_ID');
-  const safeName = sanitizePathSegment(title, 'NO_NAME');
-  const canonical = path.join(settings.downloadPath, `${safeItemId}_${safeName}`);
-  try {
-    if (!fs.existsSync(settings.downloadPath)) return canonical;
-    const dirs = fs.readdirSync(settings.downloadPath, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && String(e.name || '').startsWith(`${safeItemId}_`));
-    // A stale empty folder can exist under the exact current title (e.g. after an
-    // itemName change) while the real downloaded content sits in a differently-named
-    // sibling. Only short-circuit on the exact-title match when it's the sole folder
-    // for this itemId — otherwise score all siblings so an empty canonical folder
-    // never wins over one that actually has the downloaded content.
-    if (!dirs.some((d) => path.join(settings.downloadPath, d.name) === canonical) && fs.existsSync(canonical)) {
-      return canonical;
-    }
-    if (!dirs.length) return canonical;
-    if (dirs.length === 1) return path.join(settings.downloadPath, dirs[0].name);
-
-    // Prefer extracted-ready/non-empty directory when multiple folders with same itemId exist.
-    const withScore = dirs.map((d) => {
-      const full = path.join(settings.downloadPath, d.name);
-      const flag = path.join(full, '__extracted', '__extracted.flag');
-      let mtimeMs = 0;
-      let childCount = 0;
-      try { mtimeMs = fs.statSync(full).mtimeMs || 0; } catch {}
-      try { childCount = fs.readdirSync(full).length || 0; } catch {}
-      return { full, isCanonical: full === canonical, hasExtractedFlag: fs.existsSync(flag), childCount, mtimeMs };
-    });
-    withScore.sort((a, b) => {
-      if (a.hasExtractedFlag !== b.hasExtractedFlag) return a.hasExtractedFlag ? -1 : 1;
-      if (Boolean(a.childCount) !== Boolean(b.childCount)) return a.childCount ? -1 : 1;
-      if (a.isCanonical !== b.isCanonical) return a.isCanonical ? -1 : 1;
-      return Number(b.mtimeMs || 0) - Number(a.mtimeMs || 0);
-    });
-    return withScore[0]?.full || canonical;
-  } catch {
-    return canonical;
-  }
+  return storageMgr.buildItemDir(itemId, title);
 }
 
 async function runAvatarEnrichAfterDownload(itemIds, senderOverride) {
@@ -1043,179 +928,16 @@ function createManualFreeMetaItem(itemId, itemJson, downloadLinks) {
   return metaMgr.createManualFreeMetaItem(itemId, itemJson, downloadLinks);
 }
 
-async function resolveManualFreeAssetCandidate(rawInput) {
-  await ensureClientReady();
-  const itemId = extractBoothItemId(rawInput);
-  if (!itemId) return { error: 'invalid_item_id_or_url' };
-
-  let itemJson = {};
-  try {
-    const jsonRes = await boothClient.get(`/ja/items/${itemId}.json`, { responseType: 'json' });
-    itemJson = jsonRes?.data || {};
-  } catch (e) {
-    return { error: `item_json_fetch_failed: ${e?.message || String(e)}` };
-  }
-
-  let links = extractFreeDownloadLinksFromItemJson(itemJson);
-  if (!links.length) {
-    links = await fetchFreeDownloadLinksForItem(itemId);
-  }
-  links = dedupeDownloadLinks(links);
-  if (!links.length) return { error: 'free_download_links_not_found' };
-
-  const item = createManualFreeMetaItem(itemId, itemJson, links);
-  return { ok: true, itemId, itemJson, links, item };
-}
-
-function extractBoothCsrfFromHtml(html) {
-  const $ = cheerio.load(String(html || ''));
-  return String(
-    $('meta[name="csrf-token"]').attr('content') ||
-    $('input[name="authenticity_token"]').first().attr('value') ||
-    '',
-  ).trim();
-}
-
-async function addWishlistItemToBoothCart(rawInput, variationName) {
-  await ensureClientReady();
-  const itemId = extractBoothItemId(rawInput);
-  if (!itemId) return { error: 'invalid_item_id_or_url' };
-
-  // Fetch JSON (variation IDs + shop subdomain) and HTML (CSRF token) in parallel
-  let jsonData, csrfToken;
-  try {
-    const [jsonRes, htmlRes] = await Promise.all([
-      boothClient.get(`/ja/items/${itemId}.json`, {
-        baseURL: 'https://booth.pm',
-        responseType: 'json',
-        headers: { Accept: 'application/json' },
-      }),
-      boothClient.get(`/ja/items/${itemId}`, {
-        baseURL: 'https://booth.pm',
-        responseType: 'text',
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: 'https://booth.pm/' },
-      }),
-    ]);
-    jsonData = jsonRes?.data;
-    csrfToken = extractBoothCsrfFromHtml(String(htmlRes?.data || ''));
-  } catch (e) {
-    return { error: `item_fetch_failed: ${e?.message || String(e)}` };
-  }
-
-  if (!csrfToken) return { error: 'cart_authenticity_token_not_found' };
-
-  const shopSubdomain = String(jsonData?.shop?.subdomain || '').trim();
-  if (!shopSubdomain) return { error: 'cart_shop_not_found' };
-
-  const variations = (Array.isArray(jsonData?.variations) ? jsonData.variations : [])
-    .map((v) => ({ id: String(v?.id || ''), name: String(v?.name || '').trim() }))
-    .filter((v) => v.id);
-
-  let resolvedVariationId = variations.length === 1 ? variations[0].id : '';
-  if (!resolvedVariationId && variationName && variations.length > 0) {
-    const needle = String(variationName).trim().toLowerCase();
-    const match = variations.find((v) => v.name.toLowerCase() === needle)
-      || variations.find((v) => v.name.toLowerCase().includes(needle))
-      || variations.find((v) => needle.includes(v.name.toLowerCase()));
-    if (match) resolvedVariationId = match.id;
-  }
-
-  if (!resolvedVariationId) {
-    return {
-      error: variations.length > 1 ? 'cart_variation_ambiguous' : 'cart_variation_not_found',
-      variationCount: variations.length,
-      variations,
-    };
-  }
-
-  const cartUrl = new URL(`https://${shopSubdomain}.booth.pm/cart`);
-  cartUrl.searchParams.set('added_to_cart', 'true');
-  cartUrl.searchParams.set('via', 'market');
-
-  const body = new URLSearchParams();
-  body.set('_method', 'patch');
-  body.set('cart_item[variation_id]', resolvedVariationId);
-  body.set('authenticity_token', csrfToken);
-
-  let cartPageHtml = '';
-  try {
-    const postRes = await boothClient.post(cartUrl.toString(), body.toString(), {
-      responseType: 'text',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Origin: 'https://booth.pm',
-        Referer: 'https://booth.pm/',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    });
-    cartPageHtml = String(postRes?.data || '');
-  } catch (e) {
-    const status = e?.response?.status || null;
-    return { error: `cart_add_failed${status ? `:${status}` : ''}: ${e?.message || String(e)}` };
-  }
-
-  // Extract checkout URL from the cart page response
-  // Pattern: href="https://checkout.booth.pm/checkout/step1?uuid=UUID"
-  let checkoutUrl = null;
-  const checkoutMatch = /https:\/\/checkout\.booth\.pm\/checkout\/step1\?uuid=[a-f0-9-]+[^"'\s]*/i.exec(cartPageHtml);
-  if (checkoutMatch) {
-    checkoutUrl = checkoutMatch[0];
-  }
-
-  // Fallback: fetch cart.json to get checkout URL
-  if (!checkoutUrl) {
-    try {
-      const cartBase = new URL(cartUrl.toString());
-      cartBase.pathname = '/cart.json';
-      cartBase.search = '';
-      const cartJson = await boothClient.get(cartBase.toString(), {
-        responseType: 'json',
-        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', Referer: cartUrl.toString() },
-      });
-      const cartData = cartJson?.data;
-      const checkoutPath =
-        cartData?.carts?.[0]?.shop?.checkout_url ||
-        cartData?.carts?.[0]?.shop?.checkout_path ||
-        cartData?.carts?.[0]?.checkout_url ||
-        cartData?.carts?.[0]?.checkout_path ||
-        cartData?.checkout_url ||
-        cartData?.checkout_path ||
-        '';
-      if (checkoutPath) {
-        checkoutUrl = checkoutPath.startsWith('http') ? checkoutPath : `https://checkout.booth.pm${checkoutPath}`;
-      }
-    } catch { /* ignore */ }
-  }
-
-  return {
-    ok: true,
-    itemId,
-    variationId: resolvedVariationId,
-    cartUrl: cartUrl.toString(),
-    checkoutUrl,
-  };
-}
-
-async function fetchBoothCart(shopSubdomain) {
-  await ensureClientReady();
-  const subdomain = String(shopSubdomain || '').trim();
-  try {
-    const url = subdomain
-      ? `https://${subdomain}.booth.pm/cart.json`
-      : 'https://booth.pm/carts.json';
-    const res = await boothClient.get(url, {
-      responseType: 'json',
-      headers: {
-        Accept: 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        Referer: subdomain ? `https://${subdomain}.booth.pm/cart` : 'https://booth.pm/cart',
-      },
-    });
-    return { ok: true, data: res?.data, global: !subdomain };
-  } catch (e) {
-    return { error: `cart_fetch_failed: ${e?.message || String(e)}` };
-  }
-}
+const boothCartService = createBoothCartService({
+  getBoothClient: () => boothClient,
+  ensureClientReady,
+  extractBoothItemId,
+});
+const {
+  extractBoothCsrfFromHtml,
+  addWishlistItemToBoothCart,
+  fetchBoothCart,
+} = boothCartService;
 
 function applyVersionTrackingKeepingManual(existingMeta, latestMeta, detectedAt = new Date().toISOString()) {
   return metaMgr.applyVersionTrackingKeepingManual(existingMeta, latestMeta, detectedAt);
@@ -1233,81 +955,22 @@ function ensureMetaWithVersionTracking(existingMeta, latestMeta) {
   return metaMgr.ensureMetaWithVersionTracking(existingMeta, latestMeta);
 }
 
-function toBoothCategoryRowsFromItemJson(itemJson) {
-  const cat = itemJson?.category;
-  const rows = [];
-  if (cat && cat.parent) {
-    rows.push({
-      href: cat.parent.url,
-      text: cat.parent.name,
-      slug: String(cat.parent.url || '').replace(/^https:\/\/booth\.pm\/ja\/browse\//, ''),
-    });
-  }
-  if (cat) {
-    rows.push({
-      href: cat.url,
-      text: cat.name,
-      slug: String(cat.url || '').replace(/^https:\/\/booth\.pm\/ja\/browse\//, ''),
-    });
-  }
-  return rows;
-}
-
-async function backfillCategoriesForItemIds(items, itemIds, onProgress = null) {
-  const rows = Array.isArray(items) ? items : [];
-  const targetSet = new Set(
-    Array.from(itemIds || [])
-      .map((v) => String(v || '').trim())
-      .filter(Boolean),
-  );
-  if (!rows.length || !targetSet.size) return { changed: false, backfilled: 0, total: 0 };
-
-  const targets = rows.filter((it) => targetSet.has(String(it?.itemId || '').trim()));
-  if (!targets.length) return { changed: false, backfilled: 0, total: 0 };
-
-  await ensureClientReady();
-  let changed = false;
-  let backfilled = 0;
-  const learnedAvatars = [];
-  for (let i = 0; i < targets.length; i += 1) {
-    const item = targets[i];
-    const itemId = String(item?.itemId || '').trim();
-    if (!itemId) continue;
-    if (onProgress) {
-      try {
-        onProgress({ phase: 'categories', index: i + 1, total: targets.length });
-      } catch {
-        // ignore progress callback errors
-      }
-    }
-    try {
-      const res = await boothClient.get(`/ja/items/${itemId}.json`, { baseURL: 'https://booth.pm' });
-      const data = res?.data || {};
-      const categories = toBoothCategoryRowsFromItemJson(data);
-      if (Array.isArray(categories) && categories.length > 0) {
-        item.categories = categories;
-        item.primaryCategory = categories[categories.length - 1] || null;
-        const { learned } = enrichItemAvatarMetadata(item, data, categories);
-        if (learned) learnedAvatars.push(learned);
-        changed = true;
-        backfilled += 1;
-      }
-    } catch {
-      // ignore per-item errors; lightweight sync should stay resilient
-    }
-    await new Promise((resolve) => setTimeout(resolve, 80));
-  }
-
-  if (learnedAvatars.length) {
-    try {
-      learnAvatarsToFile(learnedAvatars);
-    } catch {
-      // non-critical; avatars.json update failure should not break sync
-    }
-  }
-
-  return { changed, backfilled, total: targets.length };
-}
+const boothItemEnrichment = createBoothItemEnrichment({
+  getBoothClient: () => boothClient,
+  ensureClientReady,
+  extractBoothItemId,
+  extractFreeDownloadLinksFromItemJson,
+  fetchFreeDownloadLinksForItem,
+  dedupeDownloadLinks,
+  createManualFreeMetaItem,
+  enrichItemAvatarMetadata,
+  learnAvatarsToFile,
+});
+const {
+  resolveManualFreeAssetCandidate,
+  toBoothCategoryRowsFromItemJson,
+  backfillCategoriesForItemIds,
+} = boothItemEnrichment;
 
 function metaNeedsVersionBackfill(items) {
   return metaMgr.metaNeedsVersionBackfill(items);
@@ -1325,100 +988,12 @@ function sendDownloadProgress(sender, payload) {
   queueMgr.sendDownloadProgress(sender, payload);
 }
 
-function isMissingBoothCookieFileError(error) {
-  if (!error || String(error.code || '') !== 'ENOENT') return false;
-  const cookieTargets = Array.from(new Set([
-    DEFAULT_SETTINGS.cookieFile,
-    String(settings?.cookieFile || '').trim(),
-    TEMP_COOKIE_PATH,
-  ].filter(Boolean).map((p) => path.resolve(p))));
-  const errPath = error.path ? path.resolve(String(error.path)) : '';
-  if (errPath && cookieTargets.includes(errPath)) return true;
-  const msg = String(error.message || '');
-  return msg.includes('booth.pm.json') || msg.includes('tempcookie.json');
-}
-
-function isRecoverableBoothCookieError(error) {
-  if (isMissingBoothCookieFileError(error)) return true;
-  const code = String(error?.code || '').trim();
-  if (
-    code === 'cookie_decrypt_failed'
-    || code === 'safe_storage_unavailable'
-    || code === 'invalid_cookie_file'
-    || code === 'invalid_cookie_payload'
-    || code === 'unsupported_cookie_file_format'
-  ) return true;
-  if (code === 'redirect_to_login' || code === 'login_required') return true;
-  const msg = String(error?.message || '').toLowerCase();
-  if (msg.includes('download_not_file_response')) return true;
-  if (msg.includes('redirect_to_login')) return true;
-  if (msg.includes('sessions/new')) return true;
-  return msg.includes('safeStorage.decryptString');
-}
-
-async function runWithBoothCookieLoginFallback(task) {
-  try {
-    return await task();
-  } catch (e) {
-    if (!isRecoverableBoothCookieError(e)) throw e;
-    const loginRes = await loginWindowMgr.openLoginWindowFlow();
-    if (!loginRes?.ok) {
-      const code = String(loginRes?.error || 'login_required');
-      const err = new Error(code);
-      err.code = code;
-      throw err;
-    }
-    await refreshMetaAfterLoginDedup(mainWindow?.webContents || null);
-    return await task();
-  }
-}
-
 async function refreshMetaAfterLogin(sender) {
-  const sendLog = (msg) => {
-    try {
-      if (sender && !sender.isDestroyed?.()) sender.send('meta-log', msg);
-    } catch {
-      // ignore
-    }
-  };
-  const sendProgress = (payload) => {
-    try {
-      if (sender && !sender.isDestroyed?.()) sender.send('meta-progress', { ...(payload || {}), scope: 'post-login-refresh' });
-    } catch {
-      // ignore
-    }
-  };
-
-  let existing = [];
-  if (fs.existsSync(META_PATH)) {
-    try {
-      existing = normalizeAndPersistMeta(JSON.parse(fs.readFileSync(META_PATH, 'utf8')));
-    } catch {
-      existing = [];
-    }
-  }
-  const latest = await generateLibraryMeta(sendLog, sendProgress, { lightweight: false, persist: true });
-  const merged = ensureMetaWithVersionTracking(existing, latest);
-  try {
-    if (sender && !sender.isDestroyed?.()) {
-      sender.send('assets-refreshed', toAssetMap(merged));
-    }
-  } catch {
-    // ignore
-  }
-  return { ok: true, itemCount: Array.isArray(merged) ? merged.length : 0 };
+  return metaMgr.refreshMetaAfterLogin(sender);
 }
 
 async function refreshMetaAfterLoginDedup(sender) {
-  if (postLoginRefreshPromise) return await postLoginRefreshPromise;
-  postLoginRefreshPromise = (async () => {
-    try {
-      return await refreshMetaAfterLogin(sender);
-    } finally {
-      postLoginRefreshPromise = null;
-    }
-  })();
-  return await postLoginRefreshPromise;
+  return metaMgr.refreshMetaAfterLoginDedup(sender);
 }
 
 const metaMgr = createMetaManager({
@@ -1436,7 +1011,7 @@ const metaMgr = createMetaManager({
   getSettings: () => settings,
   getMainWindow: () => mainWindow,
   getQueueSender: () => queueSender,
-  backupCorruptedJson,
+  backupCorruptedJson: settingsMgr.backupCorruptedJson,
   generateLibraryMeta,
   checkLibraryHasNewItems,
   applyVersionTracking,
@@ -1484,20 +1059,6 @@ const queueMgr = createDownloadQueue({
   runWithBoothCookieLoginFallback,
   openLoginWindowFlow: (...args) => loginWindowMgr.openLoginWindowFlow(...args),
   getStorageUsageSnapshot: () => storageMgr.getStorageUsageSnapshot(),
-});
-
-const storageMgr = createStorageManager({
-  fs,
-  getSettings: () => settings,
-  CACHE_DIR,
-  AUTHOR_ICON_DIR,
-  UNITY_LOG_DIR,
-  META_PATH,
-  SETTINGS_PATH,
-  IMPORT_LOG_PATH,
-  RECONCILE_LOG_PATH,
-  AVATARS_PATH,
-  APP_DATA_ROOT,
 });
 
 const healthCheckSvc = createHealthCheckService({
@@ -1726,15 +1287,6 @@ function getProjectIndexCached(projectPath) {
 
 function setProjectIndexCache(projectPath, index) {
   return unityMgr.setProjectIndexCache(projectPath, index);
-}
-
-function getCpuCount() {
-  try {
-    const n = Number(os.cpus()?.length || 0);
-    return Number.isFinite(n) && n > 0 ? n : 1;
-  } catch {
-    return 1;
-  }
 }
 
 function getRecommendedReconcileWorkerCount(totalPackages = 1) {
