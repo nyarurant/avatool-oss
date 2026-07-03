@@ -1843,7 +1843,11 @@ function setAssetsFromMap(data, options = {}) {
   refreshAvatarAliasLabels({ rerender: true }).catch((e) => {
     console.warn('[renderer] refreshAvatarAliasLabels failed:', e);
   });
-  buildCategoryOptions(state.allAssets.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded)));
+  buildCategoryOptions(state.allAssets.filter((a) => {
+    if (a.isRemoved) return false;
+    const hasRealContent = Boolean(a.downloaded) || Boolean(a.files && a.files.length);
+    return hasRealContent || (!a.isWishlisted && !a.wishlistAddedAt);
+  }));
   updateAnalyzeAvatarCompatBtn();
   if (state.boothClient?.onAssetsLoaded) {
     try { state.boothClient.onAssetsLoaded(state.allAssets); } catch {}
@@ -2194,6 +2198,42 @@ async function handleDownload(asset, tileEl) {
     }
     ui.dlBtn.disabled = false;
     ui.dlBtn.classList.remove('opacity-60');
+    ui.progressWrapper.classList.remove('opacity-100');
+    ui.progressWrapper.classList.add('opacity-0');
+  }
+}
+
+// Force-redownloads the new version for an item flagged hasUpdate. Unlike
+// handleDownload(), this must set forceRedownload so the queue actually fetches
+// the updated files instead of treating the item as already-downloaded and
+// silently no-op'ing (see DevNote-2026-07-03-update-notification-resurface-fix).
+async function handleUpdateDownload(asset, tileEl) {
+  const ui = state.tileMap.get(asset.itemId);
+  if (!ui) return;
+
+  if (ui.updateBtn) {
+    ui.updateBtn.disabled = true;
+    ui.updateBtn.classList.add('opacity-60');
+  }
+  ui.progressWrapper.classList.remove('opacity-0');
+  ui.progressWrapper.classList.add('opacity-100');
+  ui.progressBar.style.width = '0%';
+
+  try {
+    const res = await enqueueAssets([asset], { forceRedownload: true });
+    if (res.error) throw new Error(formatEnqueueError(res));
+    // Progress and completion UI are updated by the download progress IPC listener.
+  } catch (err) {
+    console.error(err);
+    if (ui.statusEl) {
+      ui.statusEl.textContent = 'error';
+      ui.statusEl.title = String(err);
+      ui.statusEl.classList.add('text-red-400');
+    }
+    if (ui.updateBtn) {
+      ui.updateBtn.disabled = false;
+      ui.updateBtn.classList.remove('opacity-60');
+    }
     ui.progressWrapper.classList.remove('opacity-100');
     ui.progressWrapper.classList.add('opacity-0');
   }
@@ -4096,6 +4136,7 @@ function wireRendererModules() {
     applyViewFilter,
     openImportForAssetAction: openImportForAsset,
     handleDownloadAction: handleDownload,
+    handleUpdateAction: handleUpdateDownload,
     openItemFolderAction: async (itemId, title) => {
       await window.boothAPI.openItemFolder(itemId, title || '');
     },

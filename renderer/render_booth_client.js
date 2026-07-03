@@ -11,12 +11,38 @@
 
     let currentMode = 'lib';
     let currentView = 'home';
-    let boothHomeCache = null;
-    let boothHomePromise = null;
-    let recommendedItemsCache = null;
-    let recommendedItemsPromise = null;
-    let followedShopNewCache = null;
-    let followedShopNewPromise = null;
+
+    // Fetch-once-then-reuse-until-stale caches. No background polling: staleness
+    // is only checked (and refreshed) when the user actually navigates back into
+    // a view, so switching tabs never fires more requests than that.
+    const HOME_CACHE_TTL_MS = 5 * 60 * 1000; // 5min: home stats/recommendations don't need to be second-fresh
+    const CART_CACHE_TTL_MS = 30 * 1000; // 30s: cart contents can change on BOOTH's site at any time
+    function createTtlCache(ttlMs) {
+      let value = null;
+      let promise = null;
+      let cachedAt = 0;
+      return {
+        get fresh() { return value !== null && (Date.now() - cachedAt) < ttlMs; },
+        get value() { return value; },
+        async load(fetchFn) {
+          if (this.fresh) return value;
+          promise = promise || fetchFn();
+          try {
+            value = await promise;
+            cachedAt = Date.now();
+            return value;
+          } catch (e) {
+            promise = null;
+            throw e;
+          }
+        },
+        invalidate() { value = null; promise = null; cachedAt = 0; },
+      };
+    }
+    const boothHomeCache = createTtlCache(HOME_CACHE_TTL_MS);
+    const recommendedItemsCache = createTtlCache(HOME_CACHE_TTL_MS);
+    const followedShopNewCache = createTtlCache(HOME_CACHE_TTL_MS);
+    const boothCartCache = createTtlCache(CART_CACHE_TTL_MS);
 
     // アセットから画像URLを取得（preview は配列）
     function getThumbUrl(item) {
@@ -47,10 +73,6 @@
 
     // ── ビュー切替 ────────────────────────────────────────
     function switchView(name) {
-      if (name === 'search') {
-        document.getElementById('btn-booth-search')?.click();
-        return;
-      }
       currentView = name;
       document.querySelectorAll('.bview').forEach(v => { v.style.display = 'none'; });
       const el = document.getElementById('bview-' + name);
@@ -62,6 +84,7 @@
       else if (name === 'cart')     loadCart();
       else if (name === 'wishlist') loadWishlist();
       else if (name === 'orders')   loadOrders();
+      else if (name === 'search')   global.AvatoolBoothSearchView?.activate?.();
     }
 
     // ── ホーム ────────────────────────────────────────────
@@ -293,15 +316,14 @@
         el.appendChild(buildPanel('あなたにおすすめの商品', '0件', [emptyHomeLine('おすすめ取得に使えるアイテムがありません')]));
         return;
       }
-      el.appendChild(buildPanel('あなたにおすすめの商品', '読み込み中', [emptyHomeLine('BOOTH の関連商品APIから取得しています')]));
+      if (!recommendedItemsCache.fresh) {
+        el.appendChild(buildPanel('あなたにおすすめの商品', '読み込み中', [emptyHomeLine('BOOTH の関連商品APIから取得しています')]));
+      }
 
       try {
-        if (!recommendedItemsCache) {
-          recommendedItemsPromise = recommendedItemsPromise || boothAPI.fetchBoothRelatedItems?.(seed.itemId, { limit: 12 });
-          recommendedItemsCache = await recommendedItemsPromise;
-        }
+        const data = await recommendedItemsCache.load(() => boothAPI.fetchBoothRelatedItems?.(seed.itemId, { limit: 12 }));
         const ownedIds = new Set((assets || []).map(a => String(a.itemId || '')).filter(Boolean));
-        const items = (Array.isArray(recommendedItemsCache?.items) ? recommendedItemsCache.items : [])
+        const items = (Array.isArray(data?.items) ? data.items : [])
           .filter(item => item && item.id && !ownedIds.has(String(item.id)))
           .slice(0, 12);
         el.innerHTML = '';
@@ -311,7 +333,7 @@
         }
         el.appendChild(buildDiscoverySection({
           title: 'あなたにおすすめの商品',
-          meta: recommendedItemsCache?.categoryName || '関連商品',
+          meta: data?.categoryName || '関連商品',
           items,
           tone: 'recommended',
         }));
@@ -338,14 +360,13 @@
         el.appendChild(buildPanel('フォローしているショップの新着', '0件', [emptyHomeLine('ショップ情報がありません')]));
         return;
       }
-      el.appendChild(buildPanel('フォローしているショップの新着', '読み込み中', [emptyHomeLine('ショップ別の新着を取得しています')]));
+      if (!followedShopNewCache.fresh) {
+        el.appendChild(buildPanel('フォローしているショップの新着', '読み込み中', [emptyHomeLine('ショップ別の新着を取得しています')]));
+      }
 
       try {
-        if (!followedShopNewCache) {
-          followedShopNewPromise = followedShopNewPromise || fetchFollowedShopNewItems(shops);
-          followedShopNewCache = await followedShopNewPromise;
-        }
-        const items = Array.isArray(followedShopNewCache?.items) ? followedShopNewCache.items : [];
+        const data = await followedShopNewCache.load(() => fetchFollowedShopNewItems(shops));
+        const items = Array.isArray(data?.items) ? data.items : [];
         el.innerHTML = '';
         if (!items.length) {
           el.appendChild(buildPanel('フォローしているショップの新着', '0件', [emptyHomeLine('新着商品が見つかりませんでした')]));
@@ -399,14 +420,13 @@
       const el = document.getElementById('booth-home-official');
       if (!el) return;
       el.innerHTML = '';
-      el.appendChild(buildPanel('BOOTHトップ', '読み込み中', [emptyHomeLine('https://booth.pm/ja から取得しています')]));
+      if (!boothHomeCache.fresh) {
+        el.appendChild(buildPanel('BOOTHトップ', '読み込み中', [emptyHomeLine('https://booth.pm/ja から取得しています')]));
+      }
 
       try {
-        if (!boothHomeCache) {
-          boothHomePromise = boothHomePromise || boothAPI.fetchBoothHome?.({ limitSections: 8, itemsPerSection: 6 });
-          boothHomeCache = await boothHomePromise;
-        }
-        const sections = pickOfficialHomeSections(boothHomeCache?.sections || []);
+        const data = await boothHomeCache.load(() => boothAPI.fetchBoothHome?.({ limitSections: 8, itemsPerSection: 6 }));
+        const sections = pickOfficialHomeSections(data?.sections || []);
         el.innerHTML = '';
         if (!sections.length) {
           el.appendChild(buildPanel('あなた向けBOOTHトップ', '0件', [emptyHomeLine('トップページの商品情報を取得できませんでした')]));
@@ -549,29 +569,181 @@
     }
 
     // ── カート ────────────────────────────────────────────
-    function loadCart() {
+    // Cached like loadHome(): without this, switching to the BOOTH tab (or back
+    // to it) re-fetched every shop's cart.json on every click, even when nothing
+    // changed. TTL is much shorter than home's since cart contents can change on
+    // BOOTH's site at any time; callers can also force a refresh via the manual
+    // reload control rendered below.
+    function renderCartPanels(el, data) {
+      const carts = normalizeCartResponse(data);
+      el.innerHTML = '';
+      const refreshRow = document.createElement('div');
+      refreshRow.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:8px;';
+      const refreshBtn = document.createElement('button');
+      refreshBtn.type = 'button';
+      refreshBtn.textContent = '再読み込み';
+      refreshBtn.style.cssText = 'font-size:9px;color:#71717a;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px 9px;cursor:pointer;font-family:inherit;';
+      refreshBtn.addEventListener('click', () => loadCart(true));
+      refreshRow.appendChild(refreshBtn);
+      el.appendChild(refreshRow);
+      if (!carts.length) {
+        el.appendChild(buildCartNotice('カートは空です', 'BOOTHでカートを開く'));
+        return;
+      }
+      el.style.gap = '12px';
+      carts.forEach((cart) => el.appendChild(buildCartPanel(cart)));
+    }
+
+    async function loadCart(forceRefresh = false) {
       const el = document.getElementById('booth-cart-content');
       if (!el) return;
-      el.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:48px;color:#52525b;">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5">
-            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-          </svg>
-          <div style="font-size:12px;color:#71717a;text-align:center;line-height:1.6;">
-            カートの内容はBOOTH公式でご確認ください。<br>
-            <span style="font-size:10px;color:#52525b;">（カートAPIはショップ別のため Avatool では一覧取得できません）</span>
-          </div>
-          <button id="open-booth-cart-btn"
-            style="font-size:11px;font-weight:700;padding:9px 20px;border-radius:8px;border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.1);color:#818cf8;cursor:pointer;font-family:inherit;transition:background .15s;">
-            BOOTHでカートを開く →
-          </button>
-        </div>`;
-      document.getElementById('open-booth-cart-btn')?.addEventListener('click', () =>
-        boothAPI.openExternalUrl('https://booth.pm/cart'));
+      if (forceRefresh) boothCartCache.invalidate();
+      if (boothCartCache.fresh) {
+        renderCartPanels(el, boothCartCache.value);
+        return;
+      }
+      el.innerHTML = emptyState('カートを読み込んでいます');
+      try {
+        const res = await boothCartCache.load(() => boothAPI.fetchBoothCart?.());
+        if (!res?.ok) {
+          boothCartCache.invalidate();
+          el.innerHTML = '';
+          el.appendChild(buildCartNotice('カートを取得できませんでした', res?.error || 'cart_fetch_failed'));
+          return;
+        }
+        renderCartPanels(el, res.data);
+      } catch (e) {
+        boothCartCache.invalidate();
+        el.innerHTML = '';
+        el.appendChild(buildCartNotice('カートを取得できませんでした', e?.message || String(e)));
+      }
     }
 
     // ── ほしいリスト ──────────────────────────────────────
+    function normalizeCartResponse(data) {
+      const rawCarts = Array.isArray(data?.carts) ? data.carts : (Array.isArray(data) ? data : []);
+      return rawCarts.map((cart, index) => {
+        const shop = cart?.shop || cart?.owner || cart?.seller || {};
+        const rawItems = cart?.cart_items || cart?.cartItems || cart?.items || cart?.lines || [];
+        const items = (Array.isArray(rawItems) ? rawItems : []).map((row) => normalizeCartItem(row)).filter(Boolean);
+        const checkoutPath = shop?.checkout_url || shop?.checkout_path || cart?.checkout_url || cart?.checkout_path || '';
+        const checkoutUrl = checkoutPath
+          ? (String(checkoutPath).startsWith('http') ? String(checkoutPath) : `https://checkout.booth.pm${checkoutPath}`)
+          : '';
+        const shopUrl = shop?.url || shop?.shop_url || shop?.base_url || shop?.cart_url || cart?.shop_url || '';
+        return {
+          id: String(cart?.id || shop?.id || index),
+          shopName: String(shop?.name || shop?.shop_name || cart?.shop_name || 'BOOTHショップ'),
+          shopUrl: String(shopUrl || ''),
+          checkoutUrl,
+          items,
+          // Real carts.json shape puts the parsed number under number_subtotal;
+          // `subtotal`/`total` are formatted strings like "¥ 4,400" that Number()
+          // can't parse, so preferring them here always showed "-" for the total.
+          total: cart?.number_subtotal ?? cart?.number_total ?? cart?.total_price ?? cart?.total ?? cart?.subtotal ?? null,
+        };
+      }).filter((cart) => cart.items.length || cart.checkoutUrl || cart.shopUrl);
+    }
+
+    function normalizeCartItem(row) {
+      const item = row?.item || row?.product || row?.booth_item || row || {};
+      const variation = row?.variation || row?.product_variant || row?.variant || {};
+      const id = String(item?.id || item?.item_id || row?.item_id || row?.product_id || '').trim();
+      // Real carts.json shape: item.primary_image (not image_url/thumbnail*).
+      const imageUrl = item?.primary_image || item?.image_url || item?.thumbnail_image_url || item?.thumbnail || row?.image_url || row?.thumbnail || '';
+      const url = item?.url || item?.shop_url || row?.url || (id ? `https://booth.pm/ja/items/${id}` : '');
+      const title = String(item?.name || item?.title || row?.name || row?.title || 'カート商品');
+      const variationName = String(variation?.name || row?.variation_name || row?.variant_name || '').trim();
+      const quantity = Number(row?.quantity ?? row?.count ?? 1);
+      // Real carts.json shape only has price as a formatted string ("¥ 2,000") on
+      // item.price; the parsed number lives at item.number_price / row.number_price.
+      // Preferring the string field made formatPrice() see NaN and always show "-".
+      const price = row?.number_price ?? item?.number_price ?? variation?.number_price
+        ?? row?.price ?? row?.unit_price ?? row?.subtotal ?? variation?.price ?? item?.price ?? null;
+      return {
+        id,
+        title,
+        variationName,
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        price,
+        imageUrl: String(imageUrl || ''),
+        url: String(url || ''),
+      };
+    }
+
+    function buildCartNotice(title, detail) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:48px;color:#52525b;text-align:center;';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'font-size:12px;color:#71717a;line-height:1.6;';
+      msg.textContent = title;
+      const sub = document.createElement('div');
+      sub.style.cssText = 'font-size:10px;color:#52525b;max-width:420px;line-height:1.5;';
+      sub.textContent = detail || '';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'BOOTHでカートを開く';
+      btn.style.cssText = 'font-size:11px;font-weight:700;padding:9px 20px;border-radius:8px;border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.1);color:#818cf8;cursor:pointer;font-family:inherit;';
+      btn.addEventListener('click', () => boothAPI.openExternalUrl('https://booth.pm/cart'));
+      wrap.appendChild(msg);
+      if (detail) wrap.appendChild(sub);
+      wrap.appendChild(btn);
+      return wrap;
+    }
+
+    function buildCartPanel(cart) {
+      const rows = cart.items.length
+        ? cart.items.map((item) => buildCartItemRow(item))
+        : [emptyHomeLine('このショップのカート商品を取得できませんでした')];
+      const panel = buildPanel(cart.shopName, cart.total != null ? formatPrice(cart.total) : `${cart.items.length}件`, rows);
+      const head = panel.firstElementChild;
+      if (head) {
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;align-items:center;flex-shrink:0;';
+        if (cart.shopUrl) actions.appendChild(buildCartActionButton('ショップ', () => boothAPI.openExternalUrl(cart.shopUrl)));
+        if (cart.checkoutUrl) actions.appendChild(buildCartActionButton('購入', () => boothAPI.openExternalUrl(cart.checkoutUrl)));
+        if (actions.children.length) head.appendChild(actions);
+      }
+      return panel;
+    }
+
+    function buildCartActionButton(label, onClick) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.style.cssText = 'font-size:10px;font-weight:700;padding:4px 9px;border-radius:6px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;font-family:inherit;';
+      btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      return btn;
+    }
+
+    function buildCartItemRow(item) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.style.cssText = 'display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-bottom:1px solid rgba(255,255,255,0.035);background:transparent;color:inherit;cursor:pointer;font-family:inherit;text-align:left;';
+      row.onmouseenter = () => { row.style.background = 'rgba(255,255,255,0.035)'; };
+      row.onmouseleave = () => { row.style.background = 'transparent'; };
+      row.addEventListener('click', () => {
+        if (item.url) boothAPI.openExternalUrl(item.url);
+      });
+      row.appendChild(mkThumb({ preview: item.imageUrl ? [item.imageUrl] : [] }, 42));
+      const info = document.createElement('div');
+      info.style.cssText = 'min-width:0;';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-size:11px;font-weight:700;color:#e4e4e7;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      title.textContent = item.title;
+      const sub = document.createElement('div');
+      sub.style.cssText = 'font-size:9px;color:#52525b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      sub.textContent = [item.variationName, item.quantity > 1 ? `${item.quantity}個` : ''].filter(Boolean).join(' / ');
+      info.appendChild(title);
+      info.appendChild(sub);
+      const price = document.createElement('div');
+      price.style.cssText = "font-size:10px;font-weight:700;color:#a1a1aa;white-space:nowrap;font-family:'JetBrains Mono',monospace;";
+      price.textContent = item.price != null ? formatPrice(item.price) : '-';
+      row.appendChild(info);
+      row.appendChild(price);
+      return row;
+    }
+
     function loadWishlist() {
       const el = document.getElementById('booth-wishlist-content');
       if (!el) return;
@@ -884,6 +1056,13 @@
 
     document.querySelectorAll('#sb-booth .sb-booth-nav').forEach(btn => {
       btn.addEventListener('click', () => switchView(btn.dataset.view));
+    });
+
+    // ライブラリ画面ツールバーの「BOOTH検索」ボタン: BOOTHクライアントの検索ビューへ直接遷移する
+    // （ホーム/カート/ほしいリストと同じ「常設タブ」として検索を扱うため、モーダルは開かない）。
+    document.getElementById('btn-booth-search')?.addEventListener('click', () => {
+      switchMode('booth');
+      switchView('search');
     });
 
     document.getElementById('bview-shop-back')?.addEventListener('click', () => switchView('home'));

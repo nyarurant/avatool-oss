@@ -244,6 +244,26 @@ describe('pickBootstrapAssets', () => {
     expect(pickBootstrapAssets(null)).toHaveLength(2);
     expect(pickBootstrapAssets({})).toHaveLength(2);
   });
+
+  // Regression: fixed items (liltoon, FaceEmo) that were never registered in
+  // meta.json got a hardcoded downloaded:false placeholder, so a successful
+  // download was never recognized on the next launch and re-downloaded forever.
+  test('meta未登録でもディスク上に展開済みなら downloaded:true を返す', () => {
+    const deps = makeDeps({
+      fs: {
+        existsSync: jest.fn((p) => String(p).includes('__extracted.flag')),
+        readFileSync: jest.fn().mockReturnValue('[]'),
+        writeFileSync: jest.fn(),
+        renameSync: jest.fn(),
+        readdirSync: jest.fn().mockReturnValue([]),
+        statSync: jest.fn().mockReturnValue({ mtimeMs: 1000 }),
+        mkdirSync: jest.fn(),
+      },
+    });
+    const { pickBootstrapAssets } = createMetaManager(deps);
+    const result = pickBootstrapAssets({});
+    expect(result.find((r) => r.itemId === '3087170')?.downloaded).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +306,23 @@ describe('getKnownPurchasedItemIds', () => {
     ];
     expect(isWishlistOnlyMetaItem(rows[1])).toBe(true);
     expect(getKnownPurchasedItemIds(rows)).toEqual(['100', '300']);
+  });
+
+  test('手動でほしいリストから外したが downloadLinks 未取得のアイテムも除外する', () => {
+    const { getKnownPurchasedItemIds, isWishlistOnlyMetaItem } = createMetaManager(makeDeps());
+    const rows = [
+      { itemId: '100', downloadLinks: [{ downloadableId: '1', fileName: 'a.zip' }] },
+      { itemId: '200', isWishlisted: false, wishlistAddedAt: '2026-01-01T00:00:00.000Z', downloadLinks: [] },
+    ];
+    expect(isWishlistOnlyMetaItem(rows[1])).toBe(true);
+    expect(getKnownPurchasedItemIds(rows)).toEqual(['100']);
+  });
+
+  test('wishlistAddedAt があっても downloadLinks が存在すれば除外しない', () => {
+    const { getKnownPurchasedItemIds, isWishlistOnlyMetaItem } = createMetaManager(makeDeps());
+    const row = { itemId: '400', isWishlisted: false, wishlistAddedAt: '2026-01-01T00:00:00.000Z', downloadLinks: [{ downloadableId: '9', fileName: 'x.zip' }] };
+    expect(isWishlistOnlyMetaItem(row)).toBe(false);
+    expect(getKnownPurchasedItemIds([row])).toEqual(['400']);
   });
 });
 
@@ -528,6 +565,21 @@ describe('createWishlistMetaItem', () => {
     expect(result.primaryCategory?.text).toBe('トップス');
   });
 
+  // wish_list_name_items.json は category.name を {en, ja} オブジェクトで返す
+  // （/ja/items/{id}.json は文字列）。どちらの形でも "[object Object]" にならないこと。
+  test('category.name が {en, ja} オブジェクトでも文字列化される', () => {
+    const result = createWishlistMetaItem('1', {
+      name: 'X',
+      category: {
+        url: 'https://booth.pm/ja/browse/3D%E8%A1%A3%E8%A3%85',
+        name: { en: '3D Clothing', ja: '3D衣装' },
+      },
+    });
+    expect(result.categories).toHaveLength(1);
+    expect(result.categories[0].text).toBe('3D衣装');
+    expect(result.primaryCategory?.text).toBe('3D衣装');
+  });
+
   test('manualAdded は設定されない', () => {
     const result = createWishlistMetaItem('1', {});
     expect(result.manualAdded).toBeUndefined();
@@ -689,6 +741,16 @@ describe('toAssetMap', () => {
     expect(map['1'].wishlistAddedAt).toBeNull();
     expect(map['1'].isRemoved).toBe(false);
     expect(map['1'].removedAt).toBeNull();
+  });
+
+  test('writeMetaFile 後の fast map は古い metaCache ではなく書き込み内容を返す', () => {
+    const deps = makeDeps();
+    const mgr = createMetaManager(deps);
+
+    mgr.setMetaCache([{ itemId: 'old', itemName: 'Old', downloadLinks: [] }]);
+    mgr.writeMetaFile([{ itemId: 'new', itemName: 'New', downloadLinks: [] }]);
+
+    expect(Object.keys(mgr.getMetaAssetMapFast())).toEqual(['new']);
   });
 });
 

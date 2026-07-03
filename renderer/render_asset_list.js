@@ -18,6 +18,7 @@
     const getAssetAvatarAnalysisSummary = deps?.getAssetAvatarAnalysisSummary || (() => null);
     const openImportForAssetAction = deps?.openImportForAssetAction;
     const handleDownloadAction = deps?.handleDownloadAction;
+    const handleUpdateAction = deps?.handleUpdateAction;
     const openItemFolderAction = deps?.openItemFolderAction;
     const persistViewModePreference = deps?.persistViewModePreference;
     const clearSelectionMode = deps?.clearSelectionMode;
@@ -50,6 +51,7 @@
       _scrollListener: null,
       _resizeObserver: null,
       _raf: null,
+      _resizeRaf: null,
     };
 
     // フィルター結果のメモ化キャッシュ
@@ -317,6 +319,18 @@
       });
     }
 
+    // Separate from bindDownloadActions()'s dlBtn: for an already-downloaded item
+    // with hasUpdate, dlBtn always routes to the import flow (shouldTreatAsDownloaded
+    // is true), which only re-imports the existing local files and never fetches
+    // the new version. This button is the one actual path to force the re-download.
+    function bindUpdateAction(asset, updateBtn) {
+      updateBtn?.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const latestAsset = getAssetByItemId(asset.itemId) || asset;
+        await handleUpdateAction?.(latestAsset);
+      });
+    }
+
     function createAssetTile(asset) {
       const tile = document.createElement('div');
       tile.className = 'asset-tile p-3 group cursor-pointer bg-[#181b20] hover:bg-[#23272f] border border-gray-800 hover:border-blue-500/50 rounded-lg transition-all flex flex-col gap-2 shadow-sm hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70';
@@ -445,11 +459,19 @@
 
       let dlBtn = null;
       let openBtn = null;
+      let updateBtn = null;
       if (!isWishlistOnly) {
         dlBtn = document.createElement('button');
         dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition';
         applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
         buttonRow.appendChild(dlBtn);
+
+        if (asset.hasUpdate) {
+          updateBtn = document.createElement('button');
+          updateBtn.className = 'update-btn text-[9px] px-2 py-1 border border-amber-500/60 text-amber-300 hover:bg-amber-500/20 transition';
+          updateBtn.textContent = '更新';
+          buttonRow.appendChild(updateBtn);
+        }
 
         openBtn = document.createElement('button');
         openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-500 hover:text-white transition';
@@ -464,6 +486,7 @@
 
       bindPrimaryOpen(tile, asset, checkbox);
       bindDownloadActions(asset, tile, dlBtn, openBtn);
+      bindUpdateAction(asset, updateBtn);
 
       tile.appendChild(thumbWrapper);
       tile.appendChild(infoContainer);
@@ -474,6 +497,7 @@
         progressBar: progressUi.progressBar,
         progressWrapper: progressUi.progressWrapper,
         dlBtn,
+        updateBtn,
         statusEl: null,
       });
 
@@ -571,12 +595,20 @@
 
       let dlBtn = null;
       let openBtn = null;
+      let updateBtn = null;
       const statusEl = document.createElement('span');
       if (!isWishlistOnlyRow) {
         dlBtn = document.createElement('button');
         dlBtn.className = 'dl-btn text-[9px] px-2 py-1 border transition rounded';
         applyDownloadButtonState(dlBtn, Boolean(asset.downloaded));
         actionTop.appendChild(dlBtn);
+
+        if (asset.hasUpdate) {
+          updateBtn = document.createElement('button');
+          updateBtn.className = 'update-btn text-[9px] px-2 py-1 border border-amber-500/60 text-amber-300 hover:bg-amber-500/20 rounded transition';
+          updateBtn.textContent = '更新';
+          actionTop.appendChild(updateBtn);
+        }
 
         openBtn = document.createElement('button');
         openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-400 hover:text-white border border-gray-800 rounded';
@@ -597,12 +629,14 @@
 
       bindPrimaryOpen(row, asset, checkbox);
       bindDownloadActions(asset, row, dlBtn, openBtn);
+      bindUpdateAction(asset, updateBtn);
 
       registerTileEntry(asset, {
         tile: row,
         progressBar: progressUi.progressBar,
         progressWrapper: progressUi.progressWrapper,
         dlBtn,
+        updateBtn,
         statusEl,
       });
 
@@ -626,9 +660,16 @@
       if (domRefs.filterBtns) {
         const validViews = ['updated', 'review', 'wishlist', 'removed'];
         const all = Array.isArray(state.allAssets) ? state.allAssets : [];
+        // wishlist-only（実体ファイルなし）は「すべて」「更新あり」のバッジ件数からも除外する。
+        // isWishlisted が false でも wishlistAddedAt が残っているだけの未購入プレースホルダーは
+        // 含めない（renderGrid側のフィルタと同じ基準）。
+        const isRealAsset = (a) => {
+          const hasRealContent = Boolean(a.downloaded) || Boolean(a.files && a.files.length);
+          return hasRealContent || (!a.isWishlisted && !a.wishlistAddedAt);
+        };
         const filterCounts = {
-          all: all.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded)).length,
-          updated: all.filter((a) => !a.isRemoved && (!a.isWishlisted || a.downloaded) && a.hasUpdate).length,
+          all: all.filter((a) => !a.isRemoved && isRealAsset(a)).length,
+          updated: all.filter((a) => !a.isRemoved && isRealAsset(a) && a.hasUpdate).length,
           wishlist: all.filter((a) => !a.isRemoved && a.isWishlisted).length,
           removed: all.filter((a) => Boolean(a.isRemoved)).length,
         };
@@ -676,8 +717,16 @@
       if (state.viewFilter === 'wishlist') {
         filtered = filtered.filter((asset) => Boolean(asset.isWishlisted));
       } else {
-        // wishlist-only items (未購入) are hidden from all other views
-        filtered = filtered.filter((asset) => !asset.isWishlisted || asset.downloaded);
+        // wishlist-only items（未購入、実体ファイルなし）は他の全ビューから隠す。
+        // isWishlisted が false でも、wishlistAddedAt が残っている（手動削除やBOOTH側での
+        // 削除に伴う同期解除）だけで実体を持たない場合は、依然として「未購入のプレースホルダー」
+        // なので「すべて」等に紛れ込ませない（lib/meta_manager.js の isWishlistOnlyMetaItem と
+        // 同じ判定基準に合わせている）。
+        filtered = filtered.filter((asset) => {
+          const hasRealContent = Boolean(asset.downloaded) || Boolean(asset.files && asset.files.length);
+          if (hasRealContent) return true;
+          return !asset.isWishlisted && !asset.wishlistAddedAt;
+        });
         if (state.viewFilter === 'updated') {
           filtered = filtered.filter((asset) => Boolean(asset.hasUpdate));
         } else if (state.viewFilter === 'review') {
@@ -873,6 +922,10 @@
         cancelAnimationFrame(vs._raf);
         vs._raf = null;
       }
+      if (vs._resizeRaf) {
+        cancelAnimationFrame(vs._resizeRaf);
+        vs._resizeRaf = null;
+      }
       if (domRefs.grid) {
         domRefs.grid.style.paddingTop = '';
         domRefs.grid.style.paddingBottom = '';
@@ -1062,20 +1115,26 @@
         vs.scrollContainer.addEventListener('scroll', vs._scrollListener, { passive: true });
       }
 
+      // ドラッグでのウィンドウリサイズ中はResizeObserverが連続発火するため、スクロール
+      // リスナーと同様にrAFで1フレームに1回へまとめ、無駄な全件再構築を防ぐ。
       vs._resizeObserver = new ResizeObserver(() => {
-        if (!vs.enabled) return;
-        const newCol = vsGetColCount();
-        if (newCol !== vs.colCount) {
-          vs.colCount = newCol;
-          vs.firstIndex = 0;
-          vs.lastIndex = 0;
-          domRefs.grid.innerHTML = '';
-          state.tileMap.clear();
-          domRefs.grid.style.paddingTop = '';
-          domRefs.grid.style.paddingBottom = '';
-          vs.tileHeight = 300;
-          vsRender();
-        }
+        if (vs._resizeRaf) return;
+        vs._resizeRaf = requestAnimationFrame(() => {
+          vs._resizeRaf = null;
+          if (!vs.enabled) return;
+          const newCol = vsGetColCount();
+          if (newCol !== vs.colCount) {
+            vs.colCount = newCol;
+            vs.firstIndex = 0;
+            vs.lastIndex = 0;
+            domRefs.grid.innerHTML = '';
+            state.tileMap.clear();
+            domRefs.grid.style.paddingTop = '';
+            domRefs.grid.style.paddingBottom = '';
+            vs.tileHeight = 300;
+            vsRender();
+          }
+        });
       });
       vs._resizeObserver.observe(domRefs.grid);
     }
@@ -1238,6 +1297,11 @@
           entry.downloadBtn.disabled = false;
           entry.downloadBtn.classList.remove('opacity-60');
           applyDownloadButtonState(entry.downloadBtn, Boolean(asset?.downloaded));
+        }
+        if (entry.updateBtn) {
+          entry.updateBtn.disabled = false;
+          entry.updateBtn.classList.remove('opacity-60');
+          entry.updateBtn.style.display = asset?.hasUpdate ? '' : 'none';
         }
       }
     }

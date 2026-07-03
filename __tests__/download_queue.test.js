@@ -184,6 +184,45 @@ describe('dedupeDownloadLinks', () => {
   });
 });
 
+describe('buildItemDir', () => {
+  test('prefers extracted sibling over stale empty canonical folder', () => {
+    const deps = makeDeps();
+    const path = deps.path;
+    deps.getSettings.mockReturnValue({
+      downloadPath: '/downloads',
+      concurrency: 2,
+      minFreeSpaceGb: 0,
+    });
+    deps.fs.existsSync.mockImplementation((targetPath) => {
+      const normalized = String(targetPath);
+      return normalized === '/downloads'
+        || normalized === path.join('/downloads', '8544451_OldTitle')
+        || normalized === path.join('/downloads', '8544451_NewTitle')
+        || normalized === path.join('/downloads', '8544451_NewTitle', '__extracted', '__extracted.flag');
+    });
+    deps.fs.readdirSync.mockImplementation((targetPath) => {
+      const normalized = String(targetPath);
+      if (normalized === '/downloads') {
+        return [
+          { name: '8544451_OldTitle', isDirectory: () => true },
+          { name: '8544451_NewTitle', isDirectory: () => true },
+        ];
+      }
+      if (normalized === path.join('/downloads', '8544451_OldTitle')) return [];
+      if (normalized === path.join('/downloads', '8544451_NewTitle')) return ['file.zip', '__extracted'];
+      return [];
+    });
+    deps.fs.statSync.mockImplementation((targetPath) => ({
+      mtimeMs: String(targetPath).includes('NewTitle') ? 2000 : 1000,
+      size: 0,
+    }));
+
+    const { buildItemDir } = createDownloadQueue(deps);
+
+    expect(buildItemDir('8544451', 'OldTitle')).toBe(path.join('/downloads', '8544451_NewTitle'));
+  });
+});
+
 // ---------------------------------------------------------------------------
 // extractFreeDownloadLinksFromItemJson (internal)
 // ---------------------------------------------------------------------------
@@ -224,6 +263,49 @@ describe('extractFreeDownloadLinksFromItemJson', () => {
   test('variations がなければ空配列', () => {
     expect(extractFreeDownloadLinksFromItemJson({})).toHaveLength(0);
     expect(extractFreeDownloadLinksFromItemJson(null)).toHaveLength(0);
+  });
+
+  // Regression: real BOOTH item JSON nests the per-file list under
+  // downloadable.no_musics / downloadable.musics rather than a single URL field.
+  test('downloadable.no_musics に入れ子のファイルからも抽出する（実データ形状）', () => {
+    const payload = {
+      variations: [
+        {
+          price: 0,
+          name: null,
+          downloadable: {
+            musics: [],
+            no_musics: [
+              { file_name: 'pinaponnte_ring', file_extension: '.zip', name: 'pinaponnte_ring.zip', url: 'https://booth.pm/downloadables/8921603?variation_id=13964364' },
+            ],
+          },
+        },
+      ],
+    };
+    const result = extractFreeDownloadLinksFromItemJson(payload);
+    expect(result).toEqual([{ downloadableId: '8921603', fileName: 'pinaponnte_ring.zip', variationName: '' }]);
+  });
+
+  test('同じ downloadableId の詳細ファイルがある場合は variation 名だけの行を作らない', () => {
+    const payload = {
+      variations: [
+        {
+          price: 0,
+          name: 'Free variation',
+          downloadable: {
+            id: '8921603',
+            url: 'https://booth.pm/downloadables/8921603',
+            musics: [],
+            no_musics: [
+              { name: 'pinaponnte_ring.zip', url: 'https://booth.pm/downloadables/8921603?variation_id=13964364' },
+            ],
+          },
+        },
+      ],
+    };
+
+    const result = extractFreeDownloadLinksFromItemJson(payload);
+    expect(result).toEqual([{ downloadableId: '8921603', fileName: 'pinaponnte_ring.zip', variationName: 'Free variation' }]);
   });
 });
 

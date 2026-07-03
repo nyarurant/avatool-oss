@@ -373,6 +373,38 @@ describe('downloadItemFiles real downloader scenarios', () => {
     setDataRoot('');
   });
 
+  test('empty file list fails before creating an item folder', async () => {
+    const tempRoot = makeTempRoot();
+    setDataRoot(tempRoot);
+    const progress = [];
+
+    await expect(downloadItemFiles({
+      itemId: '900',
+      title: 'Wishlist Only',
+      files: [],
+    }, axios.create(), [], (row) => progress.push(row))).rejects.toThrow('no_download_files');
+
+    expect(fs.existsSync(path.join(tempRoot, 'downloads', '900_Wishlist Only'))).toBe(false);
+    expect(progress.some((row) => row?.status === 'noFiles')).toBe(true);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  test('invalid file entries fail before creating an item folder', async () => {
+    const tempRoot = makeTempRoot();
+    setDataRoot(tempRoot);
+
+    await expect(downloadItemFiles({
+      itemId: '901',
+      title: 'Invalid Files',
+      files: [{ fileName: 'missing-id.zip' }],
+    }, axios.create(), [], () => {})).rejects.toThrow('no_download_files');
+
+    expect(fs.existsSync(path.join(tempRoot, 'downloads', '901_Invalid Files'))).toBe(false);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
   test('successful fake HTTP download writes final zip, extracts it, and removes partial file', async () => {
     const tempRoot = makeTempRoot();
     setDataRoot(tempRoot);

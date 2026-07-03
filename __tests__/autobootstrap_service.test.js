@@ -279,6 +279,79 @@ describe('runAutoBootstrapForProject — early exit', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// runStartupBootstrapDownloads — queue race guard
+// ---------------------------------------------------------------------------
+// Regression: startup/project auto-bootstrap calls downloadItemFiles() directly,
+// bypassing the download queue's enqueue-downloads dedup check entirely. A
+// manual "download this item" click for the same itemId while auto-bootstrap
+// is mid-download raced unsynchronized writes to the same item directory.
+describe('runStartupBootstrapDownloads — queue race guard', () => {
+  function makeStartupDeps(overrides = {}) {
+    return makeDeps({
+      getSettings: jest.fn().mockReturnValue({ autoBootstrapEnabled: true, autoExtract: false }),
+      getMetaAssetMapFast: jest.fn().mockReturnValue({}),
+      pickBootstrapAssets: jest.fn().mockReturnValue([{ itemId: '3087170', title: 'liltoon', downloaded: false, files: [] }]),
+      ensureClientReady: jest.fn().mockResolvedValue(undefined),
+      fetchFreeDownloadLinksForItem: jest.fn().mockResolvedValue([{ downloadableId: '1', fileName: 'a.zip' }]),
+      dedupeDownloadLinks: jest.fn((x) => x),
+      downloadItemFiles: jest.fn().mockResolvedValue(undefined),
+      getBoothClient: jest.fn(),
+      getBoothCookies: jest.fn(),
+      buildItemDir: jest.fn().mockReturnValue('/downloads/3087170_liltoon'),
+      extractArchivesInItemDir: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+
+  test('キューで既に running 中の itemId はダウンロードをスキップする', async () => {
+    const queueState = { running: new Map([['3087170', { itemId: '3087170', title: 'liltoon' }]]), queued: [] };
+    const deps = makeStartupDeps({ getQueueState: () => queueState });
+    const svc = createAutoBootstrapService(deps);
+    const result = await svc.runStartupBootstrapDownloads();
+    expect(deps.downloadItemFiles).not.toHaveBeenCalled();
+    expect(result.downloaded).toBe(0);
+  });
+
+  test('キューで既に queued 中の itemId もダウンロードをスキップする', async () => {
+    const queueState = { running: new Map(), queued: [{ itemId: '3087170' }] };
+    const deps = makeStartupDeps({ getQueueState: () => queueState });
+    const svc = createAutoBootstrapService(deps);
+    await svc.runStartupBootstrapDownloads();
+    expect(deps.downloadItemFiles).not.toHaveBeenCalled();
+  });
+
+  test('ダウンロード完了後は running スロットを解放する', async () => {
+    const queueState = { running: new Map(), queued: [] };
+    const deps = makeStartupDeps({ getQueueState: () => queueState });
+    const svc = createAutoBootstrapService(deps);
+    const result = await svc.runStartupBootstrapDownloads();
+    expect(deps.downloadItemFiles).toHaveBeenCalledTimes(1);
+    expect(result.downloaded).toBe(1);
+    expect(queueState.running.has('3087170')).toBe(false);
+  });
+
+  test('ダウンロード失敗時も running スロットを解放する', async () => {
+    const queueState = { running: new Map(), queued: [] };
+    const deps = makeStartupDeps({
+      getQueueState: () => queueState,
+      downloadItemFiles: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    const svc = createAutoBootstrapService(deps);
+    const result = await svc.runStartupBootstrapDownloads();
+    expect(result.error).toBe('boom');
+    expect(queueState.running.has('3087170')).toBe(false);
+  });
+
+  test('getQueueState が未提供でも従来通り動作する', async () => {
+    const deps = makeStartupDeps();
+    const svc = createAutoBootstrapService(deps);
+    const result = await svc.runStartupBootstrapDownloads();
+    expect(deps.downloadItemFiles).toHaveBeenCalledTimes(1);
+    expect(result.downloaded).toBe(1);
+  });
+});
+
 describe('runAutoBootstrapForProject — project import rules', () => {
   test('同じ projectPattern に一致する複数 choiceKey をすべて対象にする', async () => {
     const buildItemDir = jest.fn((itemId) => `/downloads/${itemId}`);

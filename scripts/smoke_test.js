@@ -69,6 +69,25 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg || 'assertion failed');
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function removeDirWithRetry(dirPath, attempts = 8, delayMs = 500) {
+  let lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      if (!fs.existsSync(dirPath)) return true;
+    } catch (e) {
+      lastError = e;
+    }
+    await sleep(delayMs);
+  }
+  if (lastError) throw lastError;
+  return !fs.existsSync(dirPath);
+}
+
 function assertHasKeys(obj, keys) {
   for (const k of keys) {
     assert(k in obj, `missing key: ${k}`);
@@ -90,6 +109,55 @@ function loadSettings() {
 function loadLibraryMeta() {
   const raw = readJsonFile(path.join(PROD_DATA_DIR, 'librarymeta.json'));
   return Array.isArray(raw) ? raw : (raw.items || Object.values(raw));
+}
+
+function normalizeProjectPathForSmoke(p) {
+  return path.resolve(String(p || '')).replace(/[\\/]+$/, '');
+}
+
+function getProjectPathValue(row) {
+  if (typeof row === 'string') return row;
+  if (row && typeof row === 'object') return row.Path || row.path || row.projectPath || '';
+  return '';
+}
+
+function findSmokeUnityProject() {
+  const candidates = [];
+  try {
+    const vcc = readJsonFile(path.join(process.env.LOCALAPPDATA, 'VRChatCreatorCompanion', 'settings.json'));
+    for (const row of (Array.isArray(vcc.userProjects) ? vcc.userProjects : [])) {
+      const p = getProjectPathValue(row);
+      if (p) candidates.push(p);
+    }
+  } catch {
+    // fall back to Avatool settings below
+  }
+
+  try {
+    const settings = loadSettings();
+    for (const row of (Array.isArray(settings.unityProjects) ? settings.unityProjects : [])) {
+      const p = getProjectPathValue(row);
+      if (p) candidates.push(p);
+    }
+  } catch {
+    // no settings fallback available
+  }
+
+  const seen = new Set();
+  for (const raw of candidates) {
+    let projectPath = '';
+    try {
+      projectPath = normalizeProjectPathForSmoke(raw);
+    } catch {
+      continue;
+    }
+    const key = projectPath.toLowerCase();
+    if (!projectPath || seen.has(key)) continue;
+    seen.add(key);
+    const versionPath = path.join(projectPath, 'ProjectSettings', 'ProjectVersion.txt');
+    if (fs.existsSync(versionPath)) return projectPath;
+  }
+  return '';
 }
 
 function tryLoadBoothCookies() {
@@ -304,6 +372,7 @@ async function main() {
       path.join(PROD_DATA_DIR, 'downloads', '3087170_liltoon', '__extracted', 'lilToon_1.x.x', 'lilToon_1.x.x', 'jp.lilxyzw.liltoon-1.x.x-installer.unitypackage'),
       path.join(PROD_DATA_DIR, 'downloads', '4915091_FaceEmo', '__extracted', 'FaceEmo-1.x.x-installer-1.2.0', 'FaceEmo-1.x.x-installer-1.2.0', 'FaceEmo-1.x.x-installer.unitypackage'),
     ].filter(p => fs.existsSync(p));
+    const smokeUnityProject = findSmokeUnityProject();
 
     await test('.unitypackage ファイル確認', () => {
       assert(existingPackages.length > 0, 'no .unitypackage files found');
@@ -319,23 +388,21 @@ async function main() {
 
     await test('planTopFolderRenames', () => {
       const unityMgr = createMinimalUnityManager();
-      const testProject = path.join(process.env.LOCALAPPDATA, 'VRChatCreatorCompanion', 'VRChatProjects', '_');
       const pkgs = existingPackages.map(p => ({
         packagePath: p,
         itemId: path.basename(path.dirname(path.dirname(path.dirname(p)))).split('_')[0],
         title: path.basename(p, '.unitypackage'),
         meta: { topFolders: [], tokens: [] },
       }));
-      const result = unityMgr.planTopFolderRenames(testProject, pkgs);
+      const result = unityMgr.planTopFolderRenames(smokeUnityProject || TEMP_DIR, pkgs);
       assertHasKeys(result, ['packages', 'renameEntries']);
       assert(Array.isArray(result.renameEntries), 'renameEntries is not array');
     });
 
     await test('analyzeImportToolDependencies', async () => {
       const unityMgr = createMinimalUnityManager();
-      const testProject = path.join(process.env.LOCALAPPDATA, 'VRChatCreatorCompanion', 'VRChatProjects', '_');
       const pkgs = existingPackages.map(p => ({ packagePath: p, meta: {} }));
-      const result = await unityMgr.analyzeImportToolDependencies(testProject, pkgs);
+      const result = await unityMgr.analyzeImportToolDependencies(smokeUnityProject || TEMP_DIR, pkgs);
       assertHasKeys(result, ['ok', 'missing', 'scannedPackages']);
       assert(result.ok === true, 'result.ok is not true');
       assert(Array.isArray(result.missing), 'missing is not array');
@@ -383,18 +450,21 @@ async function main() {
       const tempProjectPath = path.join(TEMP_DIR, 'unity_project');
 
       await test('temp Unity プロジェクト作成', () => {
+        assert(smokeUnityProject, 'no VCC/Avatool Unity project with ProjectSettings/ProjectVersion.txt found');
         fs.mkdirSync(path.join(tempProjectPath, 'ProjectSettings'), { recursive: true });
         fs.mkdirSync(path.join(tempProjectPath, 'Assets', 'Editor'), { recursive: true });
-        const srcVersion = path.join(
-          process.env.LOCALAPPDATA, 'VRChatCreatorCompanion', 'VRChatProjects', '_',
-          'ProjectSettings', 'ProjectVersion.txt'
-        );
+        const srcVersion = path.join(smokeUnityProject, 'ProjectSettings', 'ProjectVersion.txt');
         fs.copyFileSync(srcVersion, path.join(tempProjectPath, 'ProjectSettings', 'ProjectVersion.txt'));
         fs.copyFileSync(
           path.join(ROOT, 'lib', 'unity_templates', 'BoothBatchImporter.cs'),
           path.join(tempProjectPath, 'Assets', 'Editor', 'BoothBatchImporter.cs')
         );
+        fs.copyFileSync(
+          path.join(ROOT, 'lib', 'unity_templates', 'BoothImportShared.cs'),
+          path.join(tempProjectPath, 'Assets', 'Editor', 'BoothImportShared.cs')
+        );
         assert(fs.existsSync(path.join(tempProjectPath, 'Assets', 'Editor', 'BoothBatchImporter.cs')));
+        assert(fs.existsSync(path.join(tempProjectPath, 'Assets', 'Editor', 'BoothImportShared.cs')));
       });
 
       await test('runUnityBatchImport (liltoon → temp プロジェクト)', async () => {
@@ -402,7 +472,7 @@ async function main() {
         const unityMgr = createMinimalUnityManager();
         const result = await unityMgr.runUnityBatchImport(
           tempProjectPath,
-          [{ packagePath: existingPackages[0] }],
+          [existingPackages[0]],
           (p) => {
             if (p?.phase) process.stdout.write(`\r    Unity: ${p.phase} ${p.completed || 0}/${p.total || 0}`);
           },
@@ -422,7 +492,7 @@ async function main() {
     } catch {}
 
     try {
-      fs.rmSync(TEMP_DIR, { recursive: true, force: true });
+      await removeDirWithRetry(TEMP_DIR);
       console.log(`\nTEMP_DIR 削除済み: ${TEMP_DIR}`);
     } catch (e) {
       console.warn(`TEMP_DIR 削除失敗: ${e.message}`);

@@ -88,8 +88,10 @@
         domRefs.queueRunning.textContent = safeRunningText;
         domRefs.queueDone.textContent = String(done);
         domRefs.queueFailed.textContent = String(failed.length);
+        // 構造化表示（キュー/完了などの個別スパン）が既に同じ数値を並べて表示しているため、
+        // ここで重複する要約テキストは出さない。
         if (domRefs.queueStatusText) {
-          domRefs.queueStatusText.textContent = `待機 ${queued} / 完了 ${done}`;
+          domRefs.queueStatusText.textContent = '';
         }
       } else if (domRefs.queueStatusText) {
         domRefs.queueStatusText.textContent = `ダウンロード状況: ${statusLabel} / 待機 ${queued} / 実行 ${safeRunningText} / 完了 ${done} / 失敗 ${failed.length}`;

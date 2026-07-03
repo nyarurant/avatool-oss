@@ -1,4 +1,36 @@
 (function attachBoothSearch(global) {
+  // ファイル名によるバリエーション所持推測は、アバター向けカテゴリ（衣装/髪型）でのみ試みる。
+  // これらのカテゴリはバリエーション名がアバター名そのものであることが多く、実データ検証で
+  // 高い精度を確認済み。逆に武器/小物などの他カテゴリは「通常版/支援版」のような価格帯の
+  // 違いでしかなく、ファイル名とバリエーション名に関連がないため試みても無意味/危険。
+  const AVATAR_VARIATION_CATEGORIES = new Set(['3D衣装', '3D髪型']);
+
+  function getPrimaryCategoryText(asset) {
+    const c = asset?.primaryCategory;
+    if (!c || typeof c !== 'object') return '';
+    return String(c.text || c.name || '').trim();
+  }
+
+  function normalizeMatchTokens(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '') // 絵文字装飾を除去
+      .replace(/\.zip$/i, '')
+      .split(/[^a-z0-9ぁ-んァ-ヶー一-龠]+/i)
+      .filter(t => t.length >= 3); // 短いトークン（連番"no"等）による偶然一致を防ぐ
+  }
+
+  function variationMatchesLocalFiles(variationName, files) {
+    const vTokens = normalizeMatchTokens(variationName);
+    if (!vTokens.length || !Array.isArray(files) || !files.length) return false;
+    return files.some(f => {
+      const fTokens = normalizeMatchTokens(f?.fileName || f);
+      if (!fTokens.length) return false;
+      const score = vTokens.filter(t => fTokens.some(ft => ft.includes(t) || t.includes(ft))).length;
+      return score / vTokens.length >= 0.5;
+    });
+  }
+
   function createBoothSearchView({ boothAPI, toggleWishlist, getAssetMap }) {
     let currentPage = 1;
     let maxKnownPage = 1;
@@ -9,7 +41,6 @@
     let isLoading = false;
     let currentItems = [];
 
-    const modal = document.getElementById('booth-search-modal');
     const searchInput = document.getElementById('booth-search-input');
     const sortSelect = document.getElementById('booth-search-sort');
     const inStockCheck = document.getElementById('booth-search-instock');
@@ -19,9 +50,7 @@
     const pageButtons = document.getElementById('booth-page-buttons');
     const prevBtn = document.getElementById('btn-booth-prev');
     const nextBtn = document.getElementById('btn-booth-next');
-    const closeBtn = document.getElementById('btn-booth-search-close');
     const submitBtn = document.getElementById('btn-booth-search-submit');
-    const openBtn = document.getElementById('btn-booth-search');
     const emptyState = document.getElementById('booth-search-empty');
     const categorySelect = document.getElementById('booth-search-category');
     const priceSelect = document.getElementById('booth-search-price');
@@ -47,7 +76,6 @@
     let detailImgIdx = 0;
     let currentDetailItemId = null;
     let currentDetailItem = null;
-    let detailStandalone = false;
 
     function setDetailImage(idx) {
       if (!detailImages.length) return;
@@ -121,88 +149,124 @@
       if (d.wishCount != null) stats.push(`ほしい ${d.wishCount} 件`);
       detailStats.textContent = stats.join('  ·  ');
 
-      // バリエーション/価格
+      // "既に持っている" の判定は2つのシグナルのORで決める:
+      //  1. v.alreadyBought — BOOTHの認証済みAPIが返すバリエーション単位の正確な購入
+      //     ステータス（fetchBoothItemDetailAuthenticated 経由。Cookie必須）。
+      //  2. inLib — AvatoolのローカルライブラリにこのitemIdがあるか。Full Packのように
+      //     1つの購入で他の全バリエーション分のファイルもまとめて手に入るケースをカバーする
+      //     （BOOTHのストアフロント上は他バリエーションはaddable_to_cartのままでも、
+      //     Avatool上は実質「もう持っている」ため、ユーザーの意向でこちらを優先する）。
+      // assetMap.has(id) だけだとウィッシュリスト専用アイテム（未購入）まで
+      // 「所持済み」扱いになってしまうため、downloaded/files で実際の所持を確認する。
+      const assetMap = getAssetMap ? getAssetMap() : new Map();
+      const asset = assetMap instanceof Map ? assetMap.get(d.id) : assetMap?.[d.id];
+      const inLib = Boolean(asset?.downloaded || asset?.files?.length);
+      // アバター向けカテゴリのみ、inLib時にファイル名でバリエーション単位の所持を絞り込む。
+      // それ以外のカテゴリはバリエーション名とファイル名に関連がないため、inLibをそのまま使う。
+      const canFileMatch = AVATAR_VARIATION_CATEGORIES.has(getPrimaryCategoryText(asset));
+
+      const makeCartOrBuyBtn = (v, openCheckout) => {
+        const btn = document.createElement('button');
+        const label = openCheckout ? '購入する' : 'カートへ';
+        const baseColor = openCheckout ? '#6ee7b7' : '#a5b4fc';
+        const baseBorder = openCheckout ? 'rgba(52,211,153,0.4)' : 'rgba(99,102,241,0.5)';
+        const baseBg = openCheckout ? 'rgba(52,211,153,0.08)' : 'rgba(99,102,241,0.12)';
+        const hoverBg = openCheckout ? 'rgba(52,211,153,0.18)' : 'rgba(99,102,241,0.25)';
+        btn.textContent = label;
+        btn.style.cssText = `flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:3px 8px;border-radius:5px;border:1px solid ${baseBorder};background:${baseBg};color:${baseColor};cursor:pointer;transition:background .15s`;
+        btn.addEventListener('mouseenter', () => { if (!btn.dataset.loading) btn.style.background = hoverBg; });
+        btn.addEventListener('mouseleave', () => { if (!btn.dataset.loading) btn.style.background = baseBg; });
+        btn.addEventListener('click', async () => {
+          if (btn.dataset.loading) return;
+          btn.dataset.loading = '1';
+          btn.textContent = '…';
+          btn.style.opacity = '0.6';
+          try {
+            const res = await boothAPI.addWishlistItemToCart(`https://booth.pm/ja/items/${currentDetailItemId}`, v.name && v.name.trim() ? v.name.trim() : undefined);
+            if (res?.ok) {
+              btn.textContent = '✓ 完了';
+              btn.style.cssText = `flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:3px 8px;border-radius:5px;border:1px solid rgba(52,211,153,0.4);background:rgba(52,211,153,0.1);color:#6ee7b7;cursor:default`;
+              if (openCheckout && res.checkoutUrl) boothAPI.openExternalUrl(res.checkoutUrl);
+            } else if (String(res?.error || '').includes('cart_variation_ambiguous')) {
+              boothAPI.openExternalUrl(`https://booth.pm/ja/items/${currentDetailItemId}`);
+              btn.textContent = 'BOOTHで選択';
+              btn.style.color = baseColor;
+              btn.style.opacity = '1';
+              delete btn.dataset.loading;
+            } else {
+              btn.textContent = 'エラー';
+              btn.style.color = '#f87171';
+              btn.style.opacity = '1';
+              delete btn.dataset.loading;
+              setTimeout(() => { btn.textContent = label; btn.style.color = baseColor; }, 2000);
+            }
+          } catch {
+            btn.textContent = 'エラー';
+            btn.style.color = '#f87171';
+            btn.style.opacity = '1';
+            delete btn.dataset.loading;
+            setTimeout(() => { btn.textContent = label; btn.style.color = baseColor; }, 2000);
+          }
+        });
+        return btn;
+      };
+
+      // バリエーションの所持状態バッジ/ヒント/ボタンを1行分組み立てる（複数バリエーション行・
+      // 単一バリエーションの両方から使う共通処理）。
+      function buildVariationActionsRow(v) {
+        const row = document.createElement('div');
+        // 固定幅・右寄せにすることで、バッジ1個だけの行とヒント+ボタン2個の行とで
+        // 中身の幅が違っても、name側の伸縮量が変わらず、価格列の位置が揃うようにする。
+        row.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:nowrap;flex-shrink:0;width:210px';
+        const fileMatched = canFileMatch && variationMatchesLocalFiles(v.name, asset?.files);
+        const alreadyOwned = v.alreadyBought || (inLib && (!canFileMatch || fileMatched));
+        // ライブラリにはある（inLib）が、このバリエーション固有のファイルが見つからなかった
+        // ケース。本当に未所持とは限らない（タイポ等でファイル名マッチが外れただけかもしれない）
+        // ため、ボタンは残しつつ控えめに注記する。
+        const maybeOwned = !alreadyOwned && inLib && canFileMatch && !fileMatched;
+        if (v.inStock && alreadyOwned) {
+          const ownedBadge = document.createElement('span');
+          ownedBadge.style.cssText = 'flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:3px 8px;border-radius:5px;border:1px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.08);color:rgba(110,231,183,0.7);';
+          ownedBadge.textContent = '購入済み';
+          row.appendChild(ownedBadge);
+        } else if (v.inStock) {
+          if (maybeOwned) {
+            const hint = document.createElement('span');
+            hint.style.cssText = 'flex-shrink:0;font-size:9px;color:#a1a1aa;white-space:nowrap';
+            hint.textContent = '既にお持ちかも';
+            row.appendChild(hint);
+          }
+          row.appendChild(makeCartOrBuyBtn(v, false));
+          row.appendChild(makeCartOrBuyBtn(v, true));
+        }
+        return row;
+      }
+
+      // バリエーション/価格 — 単一バリエーションでも複数バリエーションでも同じ行レイアウトに統一する
       detailVariations.innerHTML = '';
       if (d.variations && d.variations.length > 0) {
-        const hasNames = d.variations.some(v => v.name && v.name.trim());
-        if (!hasNames && d.variations.length === 1) {
-          // 名前なし単一バリエーション → 価格だけ大きく表示
-          const v = d.variations[0];
-          const priceEl = document.createElement('div');
-          priceEl.style.cssText = `font-size:18px;font-weight:700;color:${v.inStock ? '#34d399' : '#52525b'}`;
+        d.variations.forEach(v => {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+          const nameEl = document.createElement('span');
+          nameEl.style.cssText = 'font-size:11px;color:#d4d4d8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          nameEl.textContent = v.name && v.name.trim() ? v.name.trim() : '—';
+          const priceEl = document.createElement('span');
+          // 価格幅を固定して右寄せにすることで、後ろに続く要素（購入済みバッジ/カート・購入
+          // ボタン/ヒント）の有無や長さに関わらず、価格列が縦に揃うようにする。
+          priceEl.style.cssText = `flex-shrink:0;min-width:60px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap;color:${v.inStock ? '#34d399' : '#52525b'}`;
           priceEl.textContent = v.price != null ? `¥${Number(v.price).toLocaleString()}` : '無料';
-          if (!v.inStock) priceEl.textContent += '  売り切れ';
-          detailVariations.appendChild(priceEl);
-        } else {
-          d.variations.forEach(v => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
-            const nameEl = document.createElement('span');
-            nameEl.style.cssText = 'font-size:11px;color:#d4d4d8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-            nameEl.textContent = v.name && v.name.trim() ? v.name.trim() : '—';
-            const priceEl = document.createElement('span');
-            priceEl.style.cssText = `font-size:12px;font-weight:700;white-space:nowrap;color:${v.inStock ? '#34d399' : '#52525b'}`;
-            priceEl.textContent = v.price != null ? `¥${Number(v.price).toLocaleString()}` : '無料';
-            if (!v.inStock) {
-              const sold = document.createElement('span');
-              sold.style.cssText = 'font-size:10px;color:#3f3f46;margin-left:4px';
-              sold.textContent = '売切';
-              priceEl.appendChild(sold);
-            }
-            row.appendChild(nameEl);
-            row.appendChild(priceEl);
-            if (v.inStock) {
-              const makeCartOrBuyBtn = (openCheckout) => {
-                const btn = document.createElement('button');
-                const label = openCheckout ? '購入する' : 'カートへ';
-                const baseColor = openCheckout ? '#6ee7b7' : '#a5b4fc';
-                const baseBorder = openCheckout ? 'rgba(52,211,153,0.4)' : 'rgba(99,102,241,0.5)';
-                const baseBg = openCheckout ? 'rgba(52,211,153,0.08)' : 'rgba(99,102,241,0.12)';
-                const hoverBg = openCheckout ? 'rgba(52,211,153,0.18)' : 'rgba(99,102,241,0.25)';
-                btn.textContent = label;
-                btn.style.cssText = `flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:3px 8px;border-radius:5px;border:1px solid ${baseBorder};background:${baseBg};color:${baseColor};cursor:pointer;transition:background .15s`;
-                btn.addEventListener('mouseenter', () => { if (!btn.dataset.loading) btn.style.background = hoverBg; });
-                btn.addEventListener('mouseleave', () => { if (!btn.dataset.loading) btn.style.background = baseBg; });
-                btn.addEventListener('click', async () => {
-                  if (btn.dataset.loading) return;
-                  btn.dataset.loading = '1';
-                  btn.textContent = '…';
-                  btn.style.opacity = '0.6';
-                  try {
-                    const res = await boothAPI.addWishlistItemToCart(`https://booth.pm/ja/items/${currentDetailItemId}`, v.name && v.name.trim() ? v.name.trim() : undefined);
-                    if (res?.ok) {
-                      btn.textContent = '✓ 完了';
-                      btn.style.cssText = `flex-shrink:0;font-size:10px;font-weight:700;font-family:inherit;padding:3px 8px;border-radius:5px;border:1px solid rgba(52,211,153,0.4);background:rgba(52,211,153,0.1);color:#6ee7b7;cursor:default`;
-                      if (openCheckout && res.checkoutUrl) boothAPI.openExternalUrl(res.checkoutUrl);
-                    } else if (String(res?.error || '').includes('cart_variation_ambiguous')) {
-                      boothAPI.openExternalUrl(`https://booth.pm/ja/items/${currentDetailItemId}`);
-                      btn.textContent = 'BOOTHで選択';
-                      btn.style.color = baseColor;
-                      btn.style.opacity = '1';
-                      delete btn.dataset.loading;
-                    } else {
-                      btn.textContent = 'エラー';
-                      btn.style.color = '#f87171';
-                      btn.style.opacity = '1';
-                      delete btn.dataset.loading;
-                      setTimeout(() => { btn.textContent = label; btn.style.color = baseColor; }, 2000);
-                    }
-                  } catch {
-                    btn.textContent = 'エラー';
-                    btn.style.color = '#f87171';
-                    btn.style.opacity = '1';
-                    delete btn.dataset.loading;
-                    setTimeout(() => { btn.textContent = label; btn.style.color = baseColor; }, 2000);
-                  }
-                });
-                return btn;
-              };
-              row.appendChild(makeCartOrBuyBtn(false));
-              row.appendChild(makeCartOrBuyBtn(true));
-            }
-            detailVariations.appendChild(row);
-          });
-        }
+          if (!v.inStock) {
+            const sold = document.createElement('span');
+            sold.style.cssText = 'font-size:10px;color:#3f3f46;margin-left:4px';
+            sold.textContent = '売切';
+            priceEl.appendChild(sold);
+          }
+          row.appendChild(nameEl);
+          row.appendChild(priceEl);
+          row.appendChild(buildVariationActionsRow(v));
+          detailVariations.appendChild(row);
+        });
       }
 
       // タグ
@@ -245,8 +309,6 @@
       setDetailImage(0);
 
       // ほしいリスト状態
-      const assetMap = getAssetMap ? getAssetMap() : new Map();
-      const inLib = assetMap instanceof Map ? assetMap.has(d.id) : Boolean(assetMap[d.id]);
       if (inLib) {
         detailWishBtn.textContent = 'ライブラリ済';
         detailWishBtn.disabled = true;
@@ -258,17 +320,6 @@
       if (detailPanel) detailPanel.style.display = 'none';
       currentDetailItemId = null;
       currentDetailItem = null;
-      if (detailStandalone) {
-        detailStandalone = false;
-        if (modal) modal.style.display = 'none';
-      }
-    }
-
-    function openStandaloneDetail(itemId, previewData) {
-      if (!modal) return;
-      detailStandalone = true;
-      modal.style.display = 'flex';
-      openDetail(itemId, previewData);
     }
 
     if (detailCloseBtn) detailCloseBtn.addEventListener('click', closeDetail);
@@ -305,10 +356,10 @@
     }
 
     // --- 検索ビュー ---
+    // #bview-search がBOOTHクライアントのサイドバーから通常のタブとして表示されるたびに
+    // 呼ばれる（render_booth_client.js の switchView 経由）。モーダルの表示切り替えは
+    // 不要になった（#bview-search自体の表示/非表示は switchView が管理する）。
     function open() {
-      if (!modal) return;
-      detailStandalone = false;
-      modal.style.display = 'flex';
       // 再オープン時: 検索済みならカードのバッジ状態を最新化して復元
       if (currentItems.length > 0) {
         renderResults(currentItems);
@@ -317,12 +368,6 @@
         setEmptyState(true);
       }
       searchInput.focus();
-    }
-
-    function close() {
-      detailStandalone = false;
-      closeDetail();
-      if (modal) modal.style.display = 'none';
     }
 
     function setStatus(text) {
@@ -565,22 +610,24 @@
       return card;
     }
 
-    openBtn?.addEventListener('click', open);
-    closeBtn?.addEventListener('click', close);
     submitBtn?.addEventListener('click', () => doSearch(1));
     searchInput?.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(1); });
     prevBtn?.addEventListener('click', () => { if (currentPage > 1) doSearch(currentPage - 1); });
     nextBtn?.addEventListener('click', () => { if (hasNextPage) doSearch(currentPage + 1); });
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && modal?.style.display === 'flex') {
-        if (detailPanel?.style.display === 'flex') closeDetail();
-        else close();
+      if (e.key === 'Escape' && detailPanel?.style.display === 'flex') {
+        closeDetail();
       }
     });
 
-    global.AvatoolBoothDetail = { open: openStandaloneDetail, close: closeDetail };
+    // 商品詳細は、ホーム/検索/カート/ほしいリストなど、どのビューからでも共通で開ける
+    // 独立モーダルとして扱う（openDetailがdetailPanel自身の表示切り替えまで行う）。
+    global.AvatoolBoothDetail = { open: openDetail, close: closeDetail };
+    // #bview-search がBOOTHクライアントのサイドバーから表示される際に呼ばれる
+    // （render_booth_client.js の switchView から起動）。
+    global.AvatoolBoothSearchView = { activate: open };
 
-    return { open, close };
+    return { open };
   }
 
   global.AvatoolBoothSearch = { createBoothSearchView };

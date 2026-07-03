@@ -66,6 +66,67 @@ describe('checkLibraryHasNewItems', () => {
 });
 
 // ---------------------------------------------------------------------------
+// generateLibraryMeta: item-block fallback detection
+// ---------------------------------------------------------------------------
+describe('generateLibraryMeta library item block fallback', () => {
+  // Regression for BOOTH's redesigned /library markup: the thumbnail link sits in
+  // a header row (with an item-page <a> link) that is a *sibling* of the section
+  // holding the actual data-test="downloadable" buttons. The fallback block
+  // detection must walk up past that header row to the shared ancestor, not stop
+  // at the first ancestor that merely contains an item link.
+  test('associates downloadable buttons nested outside the thumbnail header row', async () => {
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'avatool-meta-fetcher-'));
+
+    const libraryHtml = `
+      <div class="bg-white p-16 desktop:rounded-8 desktop:py-24 desktop:px-40">
+        <div class="flex gap-8 desktop:gap-16 border-b border-border300 pb-16">
+          <a href="/items/8544451"><img class="l-library-item-thumbnail" src="https://booth.pximg.net/c/300x300_a2_g5/i/8544451/thumb.jpg"></a>
+          <a href="/items/8544451"><div class="text-text-default font-bold text-16">MilkyCat</div></a>
+        </div>
+        <div class="mt-16">
+          <div data-test="downloadable" data-href="/downloadables/111"><div class="text-14">outfit.zip</div></div>
+        </div>
+      </div>
+    `;
+    const htmlByPath = {
+      '/orders': '<html><body></body></html>',
+      '/library': libraryHtml,
+      '/library/gifts': '<html><body></body></html>',
+      '/library/free_downloads': '<html><body></body></html>',
+    };
+    const get = jest.fn(async (targetPath) => ({ data: htmlByPath[targetPath] || '' }));
+    jest.resetModules();
+    jest.doMock('axios', () => ({ create: jest.fn(() => ({ get })) }));
+    jest.doMock('../lib/booth_cookie_store', () => ({
+      readBoothCookiesFromFile: jest.fn(() => [{ name: 'session', value: 'test' }]),
+    }));
+
+    let generateLibraryMeta;
+    let setDataRoot;
+    jest.isolateModules(() => {
+      ({ generateLibraryMeta, setDataRoot } = require('../lib/booth_meta_fetcher'));
+    });
+    setDataRoot(tempRoot);
+
+    try {
+      const items = await generateLibraryMeta(() => {}, () => {}, { lightweight: true, persist: false });
+      expect(items).toHaveLength(1);
+      expect(items[0].itemId).toBe('8544451');
+      expect(items[0].downloadLinks).toEqual([{ downloadableId: '111', fileName: 'outfit.zip' }]);
+    } finally {
+      setDataRoot('');
+      jest.dontMock('axios');
+      jest.dontMock('../lib/booth_cookie_store');
+      jest.resetModules();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getPrimaryCategory
 // ---------------------------------------------------------------------------
 describe('getPrimaryCategory', () => {
@@ -852,6 +913,78 @@ describe('extractFreeDownloadLinksFromItemJson', () => {
   test('returns an empty list when variations are missing', () => {
     expect(extractFreeDownloadLinksFromItemJson({})).toEqual([]);
     expect(extractFreeDownloadLinksFromItemJson(null)).toEqual([]);
+  });
+
+  // Regression: real BOOTH item JSON for free variations does not put the file
+  // URL directly on the variation (download_url / downloadable.url); it nests a
+  // per-file list under downloadable.musics / downloadable.no_musics instead.
+  test('extracts files nested under downloadable.no_musics (real BOOTH shape)', () => {
+    const payload = {
+      variations: [
+        {
+          id: 13964364,
+          price: 0,
+          name: null,
+          downloadable: {
+            musics: [],
+            no_musics: [
+              {
+                file_name: 'pinaponnte_ring',
+                file_extension: '.zip',
+                file_size: '11.1 MB',
+                name: 'pinaponnte_ring.zip',
+                url: 'https://booth.pm/downloadables/8921603?variation_id=13964364',
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const result = extractFreeDownloadLinksFromItemJson(payload);
+    expect(result).toEqual([{ downloadableId: '8921603', fileName: 'pinaponnte_ring.zip', variationName: '' }]);
+  });
+
+  test('extracts multiple files across downloadable.musics and no_musics', () => {
+    const payload = {
+      variations: [
+        {
+          price: 0,
+          name: 'Bundle',
+          downloadable: {
+            musics: [
+              { name: 'theme.mp3', url: 'https://booth.pm/downloadables/1' },
+            ],
+            no_musics: [
+              { name: 'model.zip', url: 'https://booth.pm/downloadables/2' },
+            ],
+          },
+        },
+      ],
+    };
+    const result = extractFreeDownloadLinksFromItemJson(payload);
+    expect(result.map((r) => r.downloadableId).sort()).toEqual(['1', '2']);
+  });
+
+  test('prefers nested file entries over generic downloadable id rows for the same id', () => {
+    const payload = {
+      variations: [
+        {
+          price: 0,
+          name: 'Free variation',
+          downloadable: {
+            id: '8921603',
+            url: 'https://booth.pm/downloadables/8921603',
+            musics: [],
+            no_musics: [
+              { name: 'pinaponnte_ring.zip', url: 'https://booth.pm/downloadables/8921603?variation_id=13964364' },
+            ],
+          },
+        },
+      ],
+    };
+
+    const result = extractFreeDownloadLinksFromItemJson(payload);
+    expect(result).toEqual([{ downloadableId: '8921603', fileName: 'pinaponnte_ring.zip', variationName: 'Free variation' }]);
   });
 });
 

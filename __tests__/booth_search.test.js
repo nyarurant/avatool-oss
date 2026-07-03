@@ -5,7 +5,7 @@ jest.mock('axios', () => ({
 }));
 
 const axios = require('axios');
-const { searchBoothItems, parseBoothHomeHtml, parseBoothRelatedItemsJson } = require('../lib/booth_search');
+const { searchBoothItems, fetchBoothItemDetail, parseBoothHomeHtml, parseBoothRelatedItemsJson } = require('../lib/booth_search');
 
 describe('searchBoothItems', () => {
   beforeEach(() => {
@@ -35,6 +35,51 @@ describe('searchBoothItems', () => {
       categoryId: '127',
       imageUrl: 'https://booth.pximg.net/c/300x300/item.jpg',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchBoothItemDetail
+// ---------------------------------------------------------------------------
+// Regression: a variation's own purchase status ("already_bought_digital" vs
+// "addable_to_cart") is only present when the request is authenticated. Without
+// forwarding the session cookie, BOOTH has no way to know who's asking and
+// every variation looks unpurchased.
+describe('fetchBoothItemDetail', () => {
+  beforeEach(() => {
+    axios.get.mockReset();
+  });
+
+  test('マップされた variations に alreadyBought フラグが付与される', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        id: 8544451,
+        name: 'MilkyCat',
+        shop: { name: 'FOXYPLAY', subdomain: 'foxyplay' },
+        variations: [
+          { id: 1, name: 'Full Pack', price: 1400, is_sold_out: false, status: 'already_bought_digital' },
+          { id: 2, name: 'Shinano', price: 800, is_sold_out: false, status: 'addable_to_cart' },
+        ],
+      },
+    });
+
+    const res = await fetchBoothItemDetail('8544451', 'session=abc');
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://booth.pm/ja/items/8544451.json',
+      expect.objectContaining({ headers: expect.objectContaining({ Cookie: 'session=abc' }) }),
+    );
+    expect(res.variations).toEqual([
+      { id: '1', name: 'Full Pack', price: 1400, inStock: true, alreadyBought: true },
+      { id: '2', name: 'Shinano', price: 800, inStock: true, alreadyBought: false },
+    ]);
+  });
+
+  test('Cookie未指定なら Cookie ヘッダーを送らない', async () => {
+    axios.get.mockResolvedValue({ data: { id: 1, variations: [] } });
+    await fetchBoothItemDetail('1');
+    const [, config] = axios.get.mock.calls[0];
+    expect(config.headers.Cookie).toBeUndefined();
   });
 });
 
