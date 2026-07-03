@@ -549,9 +549,6 @@ const DOWNLOAD_PROGRESS_FLUSH_MS = 66; // ~15fps
 const QUEUE_STATUS_FLUSH_MS = 180;
 let getLastQueueSettledAt = () => 0;
 
-let avatarDebugLastSignature = '';
-let avatarFilterGlobalDismissBound = false;
-
 // ========== Utility Functions ==========
 
 function parseSortableDateMs(raw) {
@@ -764,56 +761,30 @@ function clearAllNotifications(...args) { return callRendererModule('appState', 
 
 function showNotificationCenter(...args) { return callRendererModule('auxUi', 'showNotificationCenter', args); }
 
-function matchesSearch(asset, query) {
-  const raw = String(query || '').trim();
-  if (!raw) return true;
-
-  const avatarOnly = raw.match(/^(?:avatar|av|ava):\s*(.*)$/i);
-  if (avatarOnly) {
-    const aq = String(avatarOnly[1] || '').trim().toLowerCase();
-    if (!aq) return true;
-    const avatarPool = [
-      ...(Array.isArray(asset.supportedAvatars) ? asset.supportedAvatars : []),
-      ...(Array.isArray(asset.supportedAvatarsInferred) ? asset.supportedAvatarsInferred : []),
-    ];
-    return avatarPool.some((n) => String(n || '').toLowerCase().includes(aq));
-  }
-
-  const q = raw.toLowerCase();
-  if ((asset.title || '').toLowerCase().includes(q)) return true;
-  if ((asset.nameAliases || []).some((n) => String(n || '').toLowerCase().includes(q))) return true;
-  if ((asset.supportedAvatars || []).some((n) => String(n || '').toLowerCase().includes(q))) return true;
-  if ((asset.supportedAvatarsInferred || []).some((n) => String(n || '').toLowerCase().includes(q))) return true;
-  if ((asset.author || '').toLowerCase().includes(q)) return true;
-  if (getCategoryDisplayText(asset.primaryCategory, '').toLowerCase().includes(q)) return true;
-  if ((asset.files || []).some((f) => (f.fileName || '').toLowerCase().includes(q))) return true;
-  if ((asset.categories || []).some((c) => getCategoryDisplayText(c, '').toLowerCase().includes(q))) return true;
-  if ((asset.userTags || []).some((t) => String(t || '').toLowerCase().includes(q))) return true;
-  if ((asset.userNote || '').toLowerCase().includes(q)) return true;
-  return false;
-}
-
-function decodeCategorySlugLabel(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const noPrefix = value.replace(/^https?:\/\/booth\.pm\/[a-z]{2}\/browse\//i, '');
-  try {
-    return decodeURIComponent(noPrefix).trim();
-  } catch {
-    return noPrefix.trim();
-  }
-}
-
-function getCategoryDisplayText(category, fallback = 'その他') {
-  if (!category || typeof category !== 'object') return fallback;
-  const text = String(category.text || '').trim();
-  if (text) return text;
-  const slugText = decodeCategorySlugLabel(category.slug);
-  if (slugText) return slugText;
-  const hrefText = decodeCategorySlugLabel(category.href);
-  if (hrefText) return hrefText;
-  return fallback;
-}
+const categoryFilterUi = window.AvatoolRenderCategoryFilterUi.createRenderCategoryFilterUi({
+  state,
+  domRefs,
+  esc,
+  getAssetByItemId: (...args) => getAssetByItemId(...args),
+  showTransientMessage: (...args) => showTransientMessage(...args),
+  renderGrid: (...args) => renderGrid(...args),
+  giftCategoryKey: GIFT_CATEGORY_KEY,
+  giftCategoryLabel: GIFT_CATEGORY_LABEL,
+  freeDownloadCategoryKey: FREE_DOWNLOAD_CATEGORY_KEY,
+  freeDownloadCategoryLabel: FREE_DOWNLOAD_CATEGORY_LABEL,
+});
+const {
+  matchesSearch,
+  decodeCategorySlugLabel,
+  getCategoryDisplayText,
+  buildCategoryOptions,
+  applyCategoryFilter,
+  applyViewFilter,
+  updateBatchUI,
+  syncImportModeUI,
+  clearSelectionMode,
+  toggleSelection,
+} = categoryFilterUi;
 
 // ========== UI Components ==========
 
@@ -1285,269 +1256,61 @@ function getListGridTemplateColumns() {
 
 // ========== Core Logic ==========
 
-function normalizeAssetsFromMap(data) {
-  return Object.values(data || {}).sort(compareAssetsByAddedDateDesc);
-}
-
-function toItemIdKey(itemId) {
-  return String(itemId || '');
-}
-
-function getAssetByItemId(itemId) {
-  return state.assetByItemId.get(toItemIdKey(itemId)) || null;
-}
-
 function getTileEntryByItemId(itemId) {
   return state.tileMap.get(toItemIdKey(itemId)) || null;
 }
 
-function shouldTreatAsDownloaded(itemId, fallbackAsset) {
-  const latestAsset = getAssetByItemId(itemId) || fallbackAsset || null;
-  if (latestAsset?.downloaded) return true;
-  const entry = getTileEntryByItemId(itemId);
-  const btnText = String(entry?.downloadBtn?.textContent || '').trim();
-  const statusText = String(entry?.statusEl?.textContent || '').trim();
-  if (btnText.includes('インポート')) return true;
-  if (statusText.includes('DL済み') || statusText.includes('完了')) return true;
-  return false;
-}
+const assetStateUi = window.AvatoolRenderAssetState.createRenderAssetState({
+  state,
+  boothAPI: window.boothAPI,
+  compareAssetsByAddedDateDesc,
+  getTileEntryByItemId: (...args) => getTileEntryByItemId(...args),
+  getAssetAvatarPool,
+  logAvatarDebug,
+  buildAvatarLabelMap,
+  refreshAvatarFilterOptions: (...args) => refreshAvatarFilterOptions(...args),
+  buildCategoryOptions,
+  applyCategoryFilter,
+  renderGrid: (...args) => renderGrid(...args),
+  scheduleStorageUsageRefresh,
+});
+const {
+  normalizeAssetsFromMap,
+  toItemIdKey,
+  getAssetByItemId,
+  shouldTreatAsDownloaded,
+  countUnanalyzedDownloaded,
+  updateAnalyzeAvatarCompatBtn,
+  setAssetsFromMap,
+  refreshAvatarAliasLabels,
+  reloadAssetsMap,
+  syncDownloadStateFromLatestMapNoRerender,
+  getUndownloadedAssets,
+  getDownloadableAssets,
+  getAssetAvatarAnalysisSummary,
+  hasAvatarDetailedAnalysisResult,
+} = assetStateUi;
 
-function countUnanalyzedDownloaded() {
-  const rows = Array.isArray(state.allAssets) ? state.allAssets : [];
-  return rows.filter((a) => a.downloaded && !String(a?.avatarAnalysisCheckedAt || '').trim()).length;
-}
-
-function updateAnalyzeAvatarCompatBtn() {
-  const count = countUnanalyzedDownloaded();
-  const badge = document.getElementById('analyze-avatar-compat-badge');
-  if (!badge) return;
-  if (count > 0) {
-    badge.textContent = count;
-    badge.classList.remove('hidden');
-  } else {
-    const downloadedCount = (Array.isArray(state.allAssets) ? state.allAssets : [])
-      .filter((a) => a.downloaded).length;
-    if (downloadedCount > 0) {
-      badge.textContent = '再';
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-  }
-}
-
-function setAssetsFromMap(data, options = {}) {
-  const preserveRuntimeDownloaded = Boolean(options?.preserveRuntimeDownloaded);
-  const previousByItemId = preserveRuntimeDownloaded
-    ? new Map((state.allAssets || []).map((asset) => [toItemIdKey(asset?.itemId), asset]))
-    : null;
-  const nextAssets = normalizeAssetsFromMap(data);
-  if (preserveRuntimeDownloaded && previousByItemId) {
-    for (const asset of nextAssets) {
-      const key = toItemIdKey(asset?.itemId);
-      const previous = previousByItemId.get(key);
-      const entry = state.tileMap instanceof Map ? state.tileMap.get(key) : null;
-      const buttonText = String(entry?.downloadBtn?.textContent || '');
-      const uiShowsImport = /Import|インポート|繧､繝ｳ繝昴・繝・/i.test(buttonText);
-      if (!asset.downloaded && (previous?.downloaded || uiShowsImport)) {
-        asset.downloaded = true;
-      }
-    }
-  }
-  state.allAssets = nextAssets;
-  state.assetsRevision = Number(state.assetsRevision || 0) + 1;
-  state.assetByItemId = new Map(state.allAssets.map((asset) => [toItemIdKey(asset?.itemId), asset]));
-  if (Array.isArray(state.filteredAssets) && state.filteredAssets.length) {
-    state.filteredAssets = state.filteredAssets.map((asset) => {
-      const latest = state.assetByItemId.get(toItemIdKey(asset?.itemId));
-      return latest || asset;
-    });
-  }
-  state.downloadedAssets = state.allAssets.filter((a) => Boolean(a?.downloaded));
-  state.updateAssetCount = state.allAssets.reduce((acc, a) => acc + (a?.hasUpdate ? 1 : 0), 0);
-  if (state.allAssets.length > 0) {
-    state.libraryEmptyReason = '';
-  }
-  const total = Array.isArray(state.allAssets) ? state.allAssets.length : 0;
-  const withAvatar = (state.allAssets || []).filter((a) => getAssetAvatarPool(a).length > 0).length;
-  logAvatarDebug('setAssetsFromMap', { totalAssets: total, assetsWithAvatar: withAvatar });
-  state.avatarLabelMap = buildAvatarLabelMap(state.allAssets || [], []);
-  refreshAvatarFilterOptions(state.allAssets);
-  refreshAvatarAliasLabels({ rerender: true }).catch((e) => {
-    console.warn('[renderer] refreshAvatarAliasLabels failed:', e);
-  });
-  buildCategoryOptions(state.allAssets.filter((a) => {
-    if (a.isRemoved) return false;
-    const hasRealContent = Boolean(a.downloaded) || Boolean(a.files && a.files.length);
-    return hasRealContent || (!a.isWishlisted && !a.wishlistAddedAt);
-  }));
-  updateAnalyzeAvatarCompatBtn();
-  if (state.boothClient?.onAssetsLoaded) {
-    try { state.boothClient.onAssetsLoaded(state.allAssets); } catch {}
-  }
-}
-
-async function refreshAvatarAliasLabels(options = {}) {
-  const rerender = Boolean(options?.rerender);
-  let avatarRows = [];
-  try {
-    if (window.boothAPI?.loadAvatarAliases) {
-      const res = await window.boothAPI.loadAvatarAliases();
-      if (Array.isArray(res?.avatars)) avatarRows = res.avatars;
-    }
-  } catch {
-    avatarRows = [];
-  }
-  state.avatarLabelMap = buildAvatarLabelMap(state.allAssets || [], avatarRows);
-  if (rerender) {
-    refreshAvatarFilterOptions(state.allAssets || []);
-    renderGrid();
-  }
-}
-
-async function reloadAssetsMap(options = {}) {
-  if (!window.boothAPI?.loadAssets) return;
-  const preserveScroll = Boolean(options?.preserveScroll);
-  const scroller = document.scrollingElement || document.documentElement;
-  const prevScrollTop = preserveScroll ? Number(scroller?.scrollTop || 0) : 0;
-  const assetsMap = await window.boothAPI.loadAssets();
-  if (!assetsMap || assetsMap.error) return;
-  setAssetsFromMap(assetsMap);
-  applyCategoryFilter(state.currentCategory || 'all');
-  if (preserveScroll && scroller) {
-    requestAnimationFrame(() => {
-      scroller.scrollTop = prevScrollTop;
-    });
-  }
-  scheduleStorageUsageRefresh(120);
-}
-
-async function syncDownloadStateFromLatestMapNoRerender() {
-  if (!window.boothAPI?.loadAssets) return false;
-  const assetsMap = await window.boothAPI.loadAssets();
-  if (!assetsMap || assetsMap.error) return false;
-  let changed = false;
-  for (const asset of (state.allAssets || [])) {
-    const key = toItemIdKey(asset?.itemId);
-    const latest = assetsMap?.[key];
-    if (!latest) continue;
-    const nextDownloaded = Boolean(latest?.downloaded);
-    const nextHasUpdate = Boolean(latest?.hasUpdate);
-    if (Boolean(asset.downloaded) !== nextDownloaded) {
-      asset.downloaded = nextDownloaded;
-      changed = true;
-    }
-    if (Boolean(asset.hasUpdate) !== nextHasUpdate) {
-      asset.hasUpdate = nextHasUpdate;
-      changed = true;
-    }
-  }
-  if (changed) {
-    state.assetsRevision = Number(state.assetsRevision || 0) + 1;
-    state.assetByItemId = new Map(state.allAssets.map((asset) => [toItemIdKey(asset?.itemId), asset]));
-    state.downloadedAssets = state.allAssets.filter((a) => Boolean(a?.downloaded));
-    state.updateAssetCount = state.allAssets.reduce((acc, a) => acc + (a?.hasUpdate ? 1 : 0), 0);
-  }
-  return changed;
-}
-
-function getUndownloadedAssets() {
-  return (state.allAssets || []).filter(a => !a.downloaded && (a.files || []).length > 0);
-}
-
-async function openImportForAsset(asset) {
-  if (!asset || !asset.downloaded) {
-    showTransientMessage('未ダウンロードのためインポートできません。', 'error');
-    return;
-  }
-  if (!window.boothAPI?.listItemFiles) {
-    showTransientMessage('listItemFiles API が利用できません。', 'error');
-    return;
-  }
-  const res = await window.boothAPI.listItemFiles(asset.itemId, asset.title || '');
-  if (res?.error || !Array.isArray(res?.files)) {
-    showTransientMessage(`パッケージ一覧の取得に失敗: ${res?.error || 'unknown'}`, 'error');
-    return;
-  }
-  const pkgs = res.files
-    .filter((f) => f.kind === 'file' && String(f.name || '').toLowerCase().endsWith('.unitypackage'))
-    .map((f) => ({ ...f, mtimeDate: new Date(f.mtime || 0) }))
-    .sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0));
-  if (!pkgs.length) {
-    showTransientMessage('このアイテムにUnityパッケージが見つかりません。', 'error');
-    return;
-  }
-  openPackageSelectionModal([{ asset, packages: pkgs }]);
-}
-
-function getDownloadableAssets() {
-  return (state.allAssets || []).filter((a) => Array.isArray(a.files) && a.files.length > 0);
-}
-
-function formatEnqueueError(res) {
-  if (!res?.error) return '';
-  if (res.error === 'insufficient_disk_space') {
-    const free = formatBytes(res.freeBytes || 0);
-    const need = formatBytes(res.minFreeBytes || 0);
-    return `空き容量不足: 現在 ${free} / 必要最小 ${need}`;
-  }
-  return String(res.error || 'enqueue_failed');
-}
-
-async function enqueueAssets(assets, options = {}) {
-  if (!assets || !assets.length) return { ok: true, skipped: true };
-  const forceRedownload = Boolean(options?.forceRedownload);
-  const payload = assets.map((a) => {
-    const itemId = String(a.itemId || '');
-    const shouldAnalyzeAfterDownload = !forceRedownload && !Boolean(a?.downloaded);
-    return {
-      itemId: a.itemId,
-      title: a.title || '',
-      files: a.files || [],
-      forceRedownload,
-      analyzeAfterDownload: shouldAnalyzeAfterDownload,
-      expectedStableHash: state.expectedUpdateHashByItemId.get(itemId) || null,
-    };
-  });
-  const res = await window.boothAPI.enqueueDownloads(payload);
-  if (res?.queue) renderQueueStatus(res.queue);
-  if (res?.error) showTransientMessage(formatEnqueueError(res), 'error');
-  if (res?.capped) showTransientMessage(`一括ダウンロードは ${res.batchLimit} 件までです。残り ${res.skippedCount} 件はこのバッチ完了後に再実行してください。`, 'warning');
-  return res;
-}
-
-async function runLibrarySync(autoDownloadUndownloaded = false) {
-  const syncRes = await window.boothAPI.syncLibrary({
-    refreshMetaIfNew: true,
-    autoDownloadUndownloaded,
-  });
-  if (syncRes?.error) throw new Error(syncRes.error);
-
-  const map = await window.boothAPI.loadAssets();
-  if (map?.error) throw new Error(map.error);
-  setAssetsFromMap(map);
-  applyCategoryFilter(state.currentCategory || 'all');
-
-  if (autoDownloadUndownloaded) {
-    const undownloaded = getUndownloadedAssets();
-    await enqueueAssets(undownloaded);
-  }
-  return syncRes;
-}
-
-async function runAvatarCompatibilityAnalysis(options = {}) {
-  if (!window.boothAPI?.analyzeAvatarCompatibility) {
-    throw new Error('analyze_avatar_compatibility_unavailable');
-  }
-  const res = await window.boothAPI.analyzeAvatarCompatibility({ scope: 'avatar-analysis', ...options });
-  if (res?.error) throw new Error(res.error);
-  const next = res?.assets && typeof res.assets === 'object'
-    ? res.assets
-    : await window.boothAPI.loadAssets();
-  if (next?.error) throw new Error(next.error);
-  setAssetsFromMap(next, { preserveRuntimeDownloaded: true });
-  applyCategoryFilter(state.currentCategory || 'all');
-}
+const downloadActionsUi = window.AvatoolRenderDownloadActions.createRenderDownloadActions({
+  state,
+  boothAPI: window.boothAPI,
+  showTransientMessage: (...args) => showTransientMessage(...args),
+  openPackageSelectionModal: (...args) => openPackageSelectionModal(...args),
+  formatBytes,
+  renderQueueStatus: (...args) => renderQueueStatus(...args),
+  setAssetsFromMap,
+  applyCategoryFilter,
+  getUndownloadedAssets,
+});
+const {
+  openImportForAsset,
+  formatEnqueueError,
+  enqueueAssets,
+  runLibrarySync,
+  runAvatarCompatibilityAnalysis,
+  handleDownload,
+  handleUpdateDownload,
+} = downloadActionsUi;
 
 /**
  * Initial app bootstrap and first asset load.
@@ -1703,280 +1466,6 @@ function renderGrid() {
       domRefs.viewListBtn.classList.add('text-zinc-600');
     }
   }
-}
-
-/**
- * Start downloading an asset.
- */
-async function handleDownload(asset, tileEl) {
-  const ui = state.tileMap.get(asset.itemId);
-  if (!ui) return;
-
-  ui.dlBtn.disabled = true;
-  ui.dlBtn.classList.add('opacity-60');
-  ui.progressWrapper.classList.remove('opacity-0');
-  ui.progressWrapper.classList.add('opacity-100');
-  ui.progressBar.style.width = '0%';
-
-  try {
-    const res = await enqueueAssets([asset]);
-    if (res.error) throw new Error(formatEnqueueError(res));
-    // Progress and completion UI are updated by the download progress IPC listener.
-  } catch (err) {
-    console.error(err);
-    if (ui.statusEl) {
-      ui.statusEl.textContent = 'error';
-      ui.statusEl.title = String(err);
-      ui.statusEl.classList.add('text-red-400');
-    }
-    ui.dlBtn.disabled = false;
-    ui.dlBtn.classList.remove('opacity-60');
-    ui.progressWrapper.classList.remove('opacity-100');
-    ui.progressWrapper.classList.add('opacity-0');
-  }
-}
-
-// Force-redownloads the new version for an item flagged hasUpdate. Unlike
-// handleDownload(), this must set forceRedownload so the queue actually fetches
-// the updated files instead of treating the item as already-downloaded and
-// silently no-op'ing (see DevNote-2026-07-03-update-notification-resurface-fix).
-async function handleUpdateDownload(asset, tileEl) {
-  const ui = state.tileMap.get(asset.itemId);
-  if (!ui) return;
-
-  if (ui.updateBtn) {
-    ui.updateBtn.disabled = true;
-    ui.updateBtn.classList.add('opacity-60');
-  }
-  ui.progressWrapper.classList.remove('opacity-0');
-  ui.progressWrapper.classList.add('opacity-100');
-  ui.progressBar.style.width = '0%';
-
-  try {
-    const res = await enqueueAssets([asset], { forceRedownload: true });
-    if (res.error) throw new Error(formatEnqueueError(res));
-    // Progress and completion UI are updated by the download progress IPC listener.
-  } catch (err) {
-    console.error(err);
-    if (ui.statusEl) {
-      ui.statusEl.textContent = 'error';
-      ui.statusEl.title = String(err);
-      ui.statusEl.classList.add('text-red-400');
-    }
-    if (ui.updateBtn) {
-      ui.updateBtn.disabled = false;
-      ui.updateBtn.classList.remove('opacity-60');
-    }
-    ui.progressWrapper.classList.remove('opacity-100');
-    ui.progressWrapper.classList.add('opacity-0');
-  }
-}
-
-/**
- * Build category filter options from the current asset list.
- */
-function buildCategoryOptions(assets) {
-  const select = domRefs.categoryFilterSelect || domRefs.categoryFilter;
-  const list = domRefs.categoryList;
-  if (!select && !list) return;
-
-  const allCats = new Map();
-  const ensureCategory = (c) => {
-    if (!c) return null;
-    const key = c.slug || c.text || c.href;
-    if (!key) return null;
-    if (!allCats.has(key)) {
-      allCats.set(key, {
-        slug: c.slug || key,
-        text: getCategoryDisplayText(c, decodeCategorySlugLabel(c.slug || key) || key),
-        count: 0,
-      });
-    }
-    return key;
-  };
-  assets.forEach(a => {
-    // Count each asset at most once per category (avoid primary/categories double count).
-    const seenKeys = new Set();
-    const primaryKey = ensureCategory(a.primaryCategory);
-    if (primaryKey) seenKeys.add(primaryKey);
-    (a.categories || []).forEach((c) => {
-      const key = ensureCategory(c);
-      if (key) seenKeys.add(key);
-    });
-    seenKeys.forEach((k) => {
-      const row = allCats.get(k);
-      if (row) row.count += 1;
-    });
-  });
-  const giftCount = assets.filter((a) => Boolean(a?.isGift)).length;
-  const freeDownloadCount = assets.filter((a) => Boolean(a?.isFreeDownload)).length;
-
-  if (select) select.innerHTML = '';
-  
-  // "All" option
-  if (select) {
-    const optAll = document.createElement('option');
-    optAll.value = domRefs.categoryFilterSelect ? '__ALL__' : 'all';
-    optAll.textContent = domRefs.categoryFilterSelect ? '全カテゴリ' : `すべて (${assets.length})`;
-    select.appendChild(optAll);
-  }
-
-  // Category options
-  const isGeneric3DModelCategory = (c) => {
-    const t = String(c?.text || '').trim().toLowerCase();
-    const s = String(c?.slug || '').trim().toLowerCase();
-    return (
-      t === '3dモデル' ||
-      t === '3d model' ||
-      s === '3d-model' ||
-      s === '3dmodel' ||
-      s === '3d_models' ||
-      s === '3d-models'
-    );
-  };
-
-  const sortedCats = Array.from(allCats.values())
-    .filter((c) => !isGeneric3DModelCategory(c))
-    .sort((a, b) => (a.text || '').localeCompare(b.text || '', 'ja'))
-  sortedCats.forEach(c => {
-      if (select) {
-      const opt = document.createElement('option');
-      opt.value = c.slug || c.text;
-      opt.textContent = domRefs.categoryFilterSelect 
-        ? (c.text || c.slug)
-        : `${c.text || c.slug} (${c.count})`;
-      select.appendChild(opt);
-      }
-    });
-
-  if (list) {
-    list.innerHTML = '';
-    const mkBtn = (value, label) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'nav-item w-full text-left';
-      btn.dataset.cat = value;
-      btn.textContent = label;
-      btn.addEventListener('click', () => applyCategoryFilter(value));
-      return btn;
-    };
-    list.appendChild(mkBtn('__ALL__', `すべてのアイテム (${assets.length})`));
-    sortedCats.forEach((c) => {
-      const value = c.slug || c.text;
-      const label = `${c.text || c.slug} (${c.count})`;
-      list.appendChild(mkBtn(value, label));
-    });
-    if (giftCount > 0) {
-      list.appendChild(mkBtn(GIFT_CATEGORY_KEY, `${GIFT_CATEGORY_LABEL} (${giftCount})`));
-    }
-    if (freeDownloadCount > 0) {
-      list.appendChild(mkBtn(FREE_DOWNLOAD_CATEGORY_KEY, `${FREE_DOWNLOAD_CATEGORY_LABEL} (${freeDownloadCount})`));
-    }
-  }
-
-  if (giftCount > 0 && select) {
-    const optGift = document.createElement('option');
-    optGift.value = GIFT_CATEGORY_KEY;
-    optGift.textContent = domRefs.categoryFilterSelect
-      ? GIFT_CATEGORY_LABEL
-      : `${GIFT_CATEGORY_LABEL} (${giftCount})`;
-    select.appendChild(optGift);
-  }
-  if (freeDownloadCount > 0 && select) {
-    const optFree = document.createElement('option');
-    optFree.value = FREE_DOWNLOAD_CATEGORY_KEY;
-    optFree.textContent = domRefs.categoryFilterSelect
-      ? FREE_DOWNLOAD_CATEGORY_LABEL
-      : `${FREE_DOWNLOAD_CATEGORY_LABEL} (${freeDownloadCount})`;
-    select.appendChild(optFree);
-  }
-
-}
-
-/**
- * Apply the selected category filter and rerender.
- */
-function applyCategoryFilter(slug) {
-  state.currentCategory = slug || 'all';
-  if (domRefs.categoryFilterSelect) {
-    domRefs.categoryFilterSelect.value = state.currentCategory;
-  }
-  if (domRefs.categoryList) {
-    domRefs.categoryList.querySelectorAll('.nav-item').forEach((el) => {
-      el.classList.toggle('active', el.dataset.cat === state.currentCategory);
-    });
-  }
-  renderGrid();
-}
-
-function applyViewFilter(view) {
-  state.viewFilter = view || 'all';
-  renderGrid();
-}
-
-function updateBatchUI() {
-  if (domRefs.selectedCount) domRefs.selectedCount.textContent = `${state.selectedItems.size}`;
-  if (domRefs.btnBatchImport) domRefs.btnBatchImport.disabled = state.selectedItems.size === 0;
-  syncImportModeUI();
-}
-
-function syncImportModeUI() {
-  const active = Boolean(state.selectionMode);
-  if (domRefs.btnToggleSelect) {
-    domRefs.btnToggleSelect.classList.add('whitespace-nowrap', 'shrink-0');
-    domRefs.btnToggleSelect.textContent = active ? '一括インポート終了' : '一括インポート';
-    domRefs.btnToggleSelect.classList.remove('btn-primary');
-    if (active) {
-      domRefs.btnToggleSelect.classList.add('bg-amber-600', 'hover:bg-amber-500', 'text-white');
-    } else {
-      domRefs.btnToggleSelect.classList.remove('bg-amber-600', 'hover:bg-amber-500', 'text-white');
-      domRefs.btnToggleSelect.classList.add('btn-primary');
-    }
-  }
-  if (domRefs.importModeIndicator) {
-    const text = active
-      ? `インポートモード: ${state.selectedItems.size}件選択中`
-      : '通常モード';
-    const dotClass = active ? 'bg-amber-400' : 'bg-zinc-500';
-    const textClass = active ? 'text-amber-300' : 'text-zinc-400';
-    domRefs.importModeIndicator.className = 'text-[10px] font-mono-custom inline-flex items-center gap-1.5 select-none pointer-events-none whitespace-nowrap shrink-0';
-    domRefs.importModeIndicator.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span><span class="${textClass}">${esc(text)}</span>`;
-  }
-}
-
-function clearSelectionMode() {
-  state.selectionMode = false;
-  state.selectedItems.clear();
-  if (domRefs.batchControls) domRefs.batchControls.classList.add('hidden');
-  if (domRefs.selectionBar) {
-    domRefs.selectionBar.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
-  }
-  updateBatchUI();
-}
-
-function toggleSelection(itemId, checkboxEl) {
-  const id = String(itemId);
-  const asset = getAssetByItemId(id);
-  if (!asset?.downloaded) {
-    const now = Date.now();
-    if ((now - Number(state.lastUndownloadedSelectWarnAt || 0)) > 1200) {
-      state.lastUndownloadedSelectWarnAt = now;
-      showTransientMessage('この項目は未ダウンロードです。先にダウンロードしてから選択してください。', 'error');
-    }
-    return false;
-  }
-  const mark = checkboxEl?.querySelector('.check-mark');
-  if (state.selectedItems.has(id)) {
-    state.selectedItems.delete(id);
-    mark?.classList.add('hidden');
-    checkboxEl?.classList.remove('border-blue-500', 'bg-blue-900/30');
-  } else {
-    state.selectedItems.add(id);
-    mark?.classList.remove('hidden');
-    checkboxEl?.classList.add('border-blue-500', 'bg-blue-900/30');
-  }
-  updateBatchUI();
-  return true;
 }
 
 // ========== Preview Modal Logic ==========
@@ -2138,51 +1627,6 @@ function showAvatarFilterAnalysisPromptModal() {
   });
 }
 
-function getAssetAvatarAnalysisSummary(asset) {
-  const analysis = asset?.supportedAvatarAnalysis && typeof asset.supportedAvatarAnalysis === 'object'
-    ? asset.supportedAvatarAnalysis
-    : null;
-  if (!analysis) return null;
-  const status = String(analysis.status || '').trim().toLowerCase();
-  const primary = String(analysis.primaryAvatar || '').trim();
-  const candidates = Array.isArray(analysis.candidates)
-    ? analysis.candidates.filter((row) => String(row?.name || '').trim())
-    : [];
-  if (status === 'confirmed' && primary) {
-    return {
-      status,
-      label: primary,
-      tone: 'emerald',
-      title: `対応アバター: ${primary}`,
-    };
-  }
-  if (status === 'review' && candidates.length) {
-    const label = candidates.length === 1
-      ? String(candidates[0]?.name || '').trim()
-      : `候補 ${candidates.length}`;
-    return {
-      status,
-      label,
-      tone: 'amber',
-      title: candidates.map((row) => String(row?.name || '').trim()).filter(Boolean).join(', '),
-    };
-  }
-  if (status === 'unclassified') {
-    return {
-      status,
-      label: '未判定',
-      tone: 'zinc',
-      title: '対応アバターを特定できませんでした',
-    };
-  }
-  return null;
-}
-
-function hasAvatarDetailedAnalysisResult() {
-  const rows = Array.isArray(state.allAssets) ? state.allAssets : [];
-  return rows.some((a) => Array.isArray(a?.supportedAvatarsInferred) && a.supportedAvatarsInferred.length > 0);
-}
-
 async function requireSafeModeConfirm(message) {
   if (!state.settings?.safeMode) return true;
   return await showConfirmModal({
@@ -2201,56 +1645,6 @@ const debugConsoleBridge = window.AvatoolRenderDebugConsoleBridge.createRenderDe
   getCategoryDisplayText,
 });
 const { setupDebugConsoleBridge } = debugConsoleBridge;
-
-async function markAssetUpdateSeen(asset) {
-  if (!asset?.hasUpdate || !window.boothAPI?.markUpdateSeen) return;
-  const key = String(asset.itemId || '');
-  const expectedStableHash = state.expectedUpdateHashByItemId.get(key) || null;
-  const res = await window.boothAPI.markUpdateSeen(asset.itemId, asset.files || [], expectedStableHash);
-  if (!res?.error) {
-    asset.hasUpdate = false;
-    state.assetsRevision = Number(state.assetsRevision || 0) + 1;
-    state.expectedUpdateHashByItemId.delete(key);
-  } else {
-    console.warn('markUpdateSeen failed:', res.error);
-  }
-}
-
-async function autoLoadVccProjectsIfNeeded() {
-  try {
-    if (!window.boothAPI?.getSettings || !window.boothAPI?.loadVCCProjects || !window.boothAPI?.updateSettings) {
-      return;
-    }
-
-    const current = await window.boothAPI.getSettings();
-    state.settings = current || {};
-
-    const hasProjects = Array.isArray(current?.unityProjects) && current.unityProjects.length > 0;
-    const hasUnityPath = typeof current?.unityEditorPath === 'string' && current.unityEditorPath.trim().length > 0;
-    if (hasProjects && hasUnityPath) return;
-
-    const vcc = await window.boothAPI.loadVCCProjects();
-    if (!vcc || vcc.error || !Array.isArray(vcc.projects) || vcc.projects.length === 0) {
-      console.warn('[renderer] auto VCC load skipped:', vcc?.error || 'no projects');
-      return;
-    }
-
-    const next = {
-      ...current,
-      unityProjects: vcc.projects,
-      unityEditorPath: vcc.editorPath || current?.unityEditorPath || '',
-    };
-    const res = await window.boothAPI.updateSettings(next);
-    if (res && !res.error) {
-      state.settings = res.settings || next;
-      console.log('[renderer] Unity projects auto-loaded from VCC');
-    } else {
-      console.warn('[renderer] failed to save auto-loaded VCC projects:', res?.error);
-    }
-  } catch (e) {
-    console.warn('[renderer] autoLoadVccProjectsIfNeeded failed:', e);
-  }
-}
 
 async function checkForUpdates(...args) { return callRendererModule('appState', 'checkForUpdates', args); }
 
@@ -2342,115 +1736,25 @@ async function executeBackgroundImport(...args) { return callRendererModule('imp
 
 // ========== Meta Progress Handlers ==========
 
-/**
- * Meta progress handlers for the current renderer UI.
- */
-
-/**
- * Refresh the newer meta progress UI.
- */
-async function refreshMetaNewUI() {
-  const btn = domRefs.syncLibraryBtn;
-  const svg = btn?.querySelector('svg');
-  let ok = false;
-  if (btn) {
-    btn.disabled = true;
-    if (svg) svg.classList.add('animate-spin', 'text-blue-400');
-  }
-
-  try {
-    beginMetaProgressScope('sync-library', 'メタデータ同期を開始中...');
-    if (domRefs.grid) {
-      domRefs.grid.innerHTML = `
-        <div class="col-span-full text-[10px] text-gray-500 font-mono-custom">
-          Updating meta...
-        </div>
-      `;
-    }
-    const syncRes = await runLibrarySync(false);
-    scheduleStorageUsageRefresh(300);
-    if (domRefs.grid) domRefs.grid.innerHTML = '';
-    if (domRefs.lastUpdatedSpan) {
-      const now = new Date();
-      domRefs.lastUpdatedSpan.textContent = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    }
-    const ms = Number(syncRes?.summary?.elapsedMs || 0);
-    const sec = ms > 0 ? (ms / 1000).toFixed(1) : '0.0';
-    const newItems = Number(syncRes?.summary?.newItemCount || 0);
-    const totalItems = Number(syncRes?.summary?.totalItemCount ?? state.allAssets?.length ?? 0);
-    state.libraryEmptyReason = String(syncRes?.summary?.emptyReason || '');
-    state.boothLoggedIn = syncRes?.summary?.boothLoggedIn ?? null;
-    const catBackfilled = Number(syncRes?.summary?.categoryBackfillCount || 0);
-    const fallbackThumb = Number(syncRes?.summary?.fallbackPreviewCount || 0);
-    const fallbackIcon = Number(syncRes?.summary?.fallbackAuthorIconCount || 0);
-    if (totalItems <= 0) {
-      const emptyMessage = state.libraryEmptyReason === 'not_logged_in'
-        ? 'BOOTHにログインしていません'
-        : state.libraryEmptyReason === 'no_purchases'
-          ? '購入アイテムはありません'
-          : '購入アイテムを確認できません';
-      showTransientMessage(
-        `同期完了 ${sec}s / ${emptyMessage}`,
-        'info',
-        6500,
-      );
-    } else {
-      showTransientMessage(
-        `同期完了 ${sec}s / 合計 ${totalItems} 件 / 新規 ${newItems} 件 / カテゴリ補完 ${catBackfilled} 件 / 画像フォールバック ${fallbackThumb} 件 / アイコンフォールバック ${fallbackIcon} 件`,
-        'info',
-        6500,
-      );
-    }
-    ok = true;
-  } catch (e) {
-    console.error(e);
-    if (domRefs.grid) {
-      domRefs.grid.innerHTML = `
-        <div class="col-span-full text-[10px] text-red-500 font-mono-custom">
-          ${esc(e?.message || String(e))}
-        </div>
-      `;
-    }
-    showTransientMessage(`同期に失敗しました: ${e?.message || e}`, 'error');
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      if (svg) svg.classList.remove('animate-spin', 'text-blue-400');
-    }
-    endMetaProgressScope('sync-library');
-  }
-  return ok;
-}
-
-async function refreshAvatarAnalysisUI(options = {}) {
-  const btn = domRefs.analyzeAvatarCompatBtn;
-  const svg = btn?.querySelector('svg');
-  let ok = false;
-  if (btn) {
-    btn.disabled = true;
-    if (svg) svg.classList.add('animate-spin', 'text-cyan-300');
-  }
-
-  try {
-    beginMetaProgressScope('avatar-analysis', '対応衣装の詳細解析を開始中...');
-    await runAvatarCompatibilityAnalysis(options);
-    scheduleStorageUsageRefresh(300);
-    showTransientMessage('対応衣装の詳細解析が完了しました。', 'info');
-    ok = true;
-  } catch (e) {
-    console.error(e);
-    showTransientMessage(`詳細解析に失敗しました: ${e?.message || e}`, 'error');
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      if (svg) svg.classList.remove('animate-spin', 'text-cyan-300');
-    }
-    endMetaProgressScope('avatar-analysis');
-  }
-  updateAnalyzeAvatarCompatBtn();
-  return ok;
-}
-
+const metaAvatarSyncUi = window.AvatoolRenderMetaAvatarSyncUi.createRenderMetaAvatarSyncUi({
+  state,
+  domRefs,
+  esc,
+  boothAPI: window.boothAPI,
+  runLibrarySync,
+  runAvatarCompatibilityAnalysis,
+  updateAnalyzeAvatarCompatBtn,
+  scheduleStorageUsageRefresh,
+  showTransientMessage: (...args) => showTransientMessage(...args),
+  beginMetaProgressScope: (...args) => beginMetaProgressScope(...args),
+  endMetaProgressScope: (...args) => endMetaProgressScope(...args),
+});
+const {
+  markAssetUpdateSeen,
+  autoLoadVccProjectsIfNeeded,
+  refreshMetaNewUI,
+  refreshAvatarAnalysisUI,
+} = metaAvatarSyncUi;
 // ========== Download Progress Handler ==========
 
 function renderQueueStatus(...args) { return callRendererModule('queueUi', 'renderQueueStatus', args); }
@@ -2465,440 +1769,55 @@ function refreshVisibleTileActionStates(...args) { return callRendererModule('as
 
 // ========== Event Listeners Setup ==========
 
-function clickIfEnabled(el) {
-  if (!el || el.disabled) return false;
-  el.click();
-  return true;
-}
+const globalUiHelpers = window.AvatoolRenderGlobalUiHelpers.createRenderGlobalUiHelpers({
+  state,
+  domRefs,
+  isElementShown,
+  stopShortcutCapture,
+  clearSelectionMode,
+  closeManualAddModal,
+  closeWishlistAddModal,
+  closePackageSelectionModal,
+  closeImportModal,
+  closePreviewModal,
+  closeProjectItemsModal,
+  closeAutoBootstrapModal,
+  setAvatarFilterPanelOpen: (...args) => setAvatarFilterPanelOpen(...args),
+  renderGrid: (...args) => renderGrid(...args),
+});
+const {
+  clickIfEnabled,
+  focusSearchInput,
+  isConfirmModalOpen,
+  closeTopOverlayOrMode,
+} = globalUiHelpers;
 
-function focusSearchInput(selectAll = true) {
-  if (!domRefs.searchInput) return false;
-  domRefs.searchInput.focus();
-  if (selectAll && typeof domRefs.searchInput.select === 'function') {
-    domRefs.searchInput.select();
-  }
-  return true;
-}
-
-function isConfirmModalOpen() {
-  const btn = document.querySelector('[data-role="confirm"]');
-  return Boolean(btn && btn.closest('.fixed'));
-}
-
-function closeTopOverlayOrMode() {
-  const shortcutsGuideClose = document.querySelector('#shortcuts-guide-close');
-  if (shortcutsGuideClose) {
-    shortcutsGuideClose.click();
-    return true;
-  }
-  const confirmCancel = document.querySelector('[data-role="cancel"]');
-  if (confirmCancel && confirmCancel.closest('.fixed')) {
-    confirmCancel.click();
-    return true;
-  }
-  const notifyClose = document.querySelector('#notify-center-close');
-  if (notifyClose) {
-    notifyClose.click();
-    return true;
-  }
-  const updatesClose = document.querySelector('#updates-close');
-  if (updatesClose) {
-    updatesClose.click();
-    return true;
-  }
-  const historyClose = document.querySelector('#history-close');
-  if (historyClose) {
-    historyClose.click();
-    return true;
-  }
-  if (isElementShown(domRefs.manualAddModal)) {
-    closeManualAddModal();
-    return true;
-  }
-  if (isElementShown(domRefs.wishlistAddModal)) {
-    closeWishlistAddModal();
-    return true;
-  }
-  if (isElementShown(domRefs.pkgSelectModal)) {
-    closePackageSelectionModal();
-    return true;
-  }
-  if (isElementShown(domRefs.importModal)) {
-    return closeImportModal();
-  }
-  if (isElementShown(domRefs.previewOverlay)) {
-    closePreviewModal();
-    return true;
-  }
-  if (isElementShown(domRefs.projectItemsModal)) {
-    closeProjectItemsModal();
-    return true;
-  }
-  if (isElementShown(domRefs.autoBootstrapModal)) {
-    closeAutoBootstrapModal();
-    return true;
-  }
-  if (isElementShown(domRefs.settingsModal)) {
-    stopShortcutCapture();
-    domRefs.settingsModal.classList.add('hidden');
-    domRefs.settingsModal.classList.remove('flex');
-    return true;
-  }
-  if (state.avatarFilterPanelOpen) {
-    setAvatarFilterPanelOpen(false);
-    return true;
-  }
-  if (state.selectionMode) {
-    clearSelectionMode();
-    renderGrid();
-    return true;
-  }
-  return false;
-}
-
-function setAvatarFilterPanelOpen(open) {
-  const panel = document.getElementById('avatar-filter-panel');
-  const button = document.getElementById('avatar-filter-button');
-  const chevron = document.getElementById('avatar-filter-chevron');
-  const next = Boolean(open);
-  state.avatarFilterPanelOpen = next;
-  if (panel) panel.classList.toggle('hidden', !next);
-  if (button) button.setAttribute('aria-expanded', next ? 'true' : 'false');
-  if (chevron) chevron.classList.toggle('rotate-180', next);
-}
-
-function getAvatarDisplayName(name) {
-  const raw = String(name || '').trim();
-  return String(state.avatarLabelMap?.get(raw) || raw).trim() || raw;
-}
-
-function syncAvatarFilterUI() {
-  const label = document.getElementById('avatar-filter-label');
-  const img = document.getElementById('avatar-filter-img');
-  const panel = document.getElementById('avatar-filter-panel');
-  const button = document.getElementById('avatar-filter-button');
-  const filters = Array.isArray(state.avatarFilters) && state.avatarFilters.length ? state.avatarFilters : (state.avatarFilter ? [state.avatarFilter] : []);
-  const val = state.avatarFilter || '';
-  const filterLabel = filters.length > 1
-    ? filters.map((name) => getAvatarDisplayName(name)).join('・')
-    : (filters[0] ? getAvatarDisplayName(filters[0]) : 'アバターで絞り込み');
-  if (label) label.textContent = filterLabel;
-  if (img) {
-    const imgSrc = filters.length ? (state.avatarImageMap?.get(filters[0]) || '') : '';
-    if (imgSrc) {
-      img.onerror = () => { img.classList.add('hidden'); };
-      img.src = imgSrc;
-      img.classList.remove('hidden');
-    } else {
-      img.removeAttribute('src');
-      img.classList.add('hidden');
-    }
-  }
-  if (panel) {
-    panel.querySelectorAll('[data-value]').forEach((opt) => {
-      const isSelected = opt.dataset.value === '' ? !filters.length : filters.includes(opt.dataset.value);
-      if (opt.classList.contains('avatar-grid-item')) {
-        opt.classList.toggle('bg-white/8', isSelected);
-        const thumb = opt.querySelector('.avatar-grid-thumb');
-        if (thumb) thumb.classList.toggle('ring-2', isSelected);
-        if (thumb) thumb.classList.toggle('ring-blue-500', isSelected);
-        if (thumb) thumb.classList.toggle('border-blue-500/50', isSelected);
-        const check = opt.querySelector('.avatar-grid-check');
-        if (check) check.classList.toggle('opacity-0', !isSelected);
-        if (check) check.classList.toggle('opacity-100', isSelected);
-        const itemLabel = opt.querySelector('.avatar-grid-label');
-        if (itemLabel) itemLabel.classList.toggle('text-zinc-200', isSelected);
-        if (itemLabel) itemLabel.classList.toggle('text-zinc-400', !isSelected);
-      } else {
-        opt.classList.toggle('bg-white/10', isSelected);
-        opt.classList.toggle('text-zinc-200', isSelected);
-      }
-    });
-  }
-  if (button) {
-    button.classList.toggle('border-blue-500/50', Boolean(filters.length));
-  }
-}
-
-function ensureAvatarFilterSelect() {
-  if (domRefs.avatarFilterSelect && document.body.contains(domRefs.avatarFilterSelect)) {
-    return domRefs.avatarFilterSelect;
-  }
-  if (!domRefs.searchInput) return null;
-
-  const searchWrap = domRefs.searchInput.parentElement;
-  if (searchWrap) {
-    searchWrap.classList.add('flex', 'items-center', 'gap-2', 'w-full', 'max-w-[860px]');
-    if (searchWrap.classList.contains('max-w-md')) searchWrap.classList.remove('max-w-md');
-    domRefs.searchInput.classList.remove('w-full');
-    domRefs.searchInput.classList.add('min-w-0', 'flex-1');
-  }
-
-  const wrap = document.createElement('div');
-  wrap.id = 'avatar-filter-wrap';
-  wrap.className = 'relative min-w-[190px] max-w-[320px] shrink-0';
-
-  const select = document.createElement('select');
-  select.id = 'avatar-filter-select';
-  select.className = 'hidden';
-  select.setAttribute('aria-hidden', 'true');
-  select.setAttribute('tabindex', '-1');
-  select.innerHTML = '<option value="">アバター絞り込み</option>';
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.id = 'avatar-filter-button';
-  button.className = 'h-10 w-full bg-black/40 border border-white/5 rounded-xl px-3 py-2 text-[12px] text-zinc-200 outline-none transition-all flex items-center gap-2';
-  button.setAttribute('title', '対応アバターで絞り込み');
-  button.setAttribute('aria-haspopup', 'listbox');
-  button.setAttribute('aria-expanded', 'false');
-  button.innerHTML = `
-    <img id="avatar-filter-img" class="hidden w-6 h-6 rounded-md object-cover shrink-0 border border-white/10" alt="">
-    <span id="avatar-filter-label" class="flex-1 min-w-0 text-left truncate">アバター絞り込み</span>
-    <svg id="avatar-filter-chevron" class="w-4 h-4 text-zinc-400 transition-transform" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-      <path d="M5 7.5L10 12.5L15 7.5" stroke-linecap="round" stroke-linejoin="round"></path>
-    </svg>
-  `;
-
-  const panel = document.createElement('div');
-  panel.id = 'avatar-filter-panel';
-  panel.className = 'hidden absolute right-0 top-[calc(100%+8px)] z-[120] overflow-auto rounded-xl border border-white/10 bg-[#0b0c10] p-1.5 shadow-2xl';
-  panel.style.cssText = 'width:400px;max-height:480px;';
-
-  const anchor = domRefs.searchInput;
-  const parent = anchor.parentElement;
-  if (parent && parent.appendChild) {
-    wrap.appendChild(select);
-    wrap.appendChild(button);
-    wrap.appendChild(panel);
-    parent.appendChild(wrap);
-  } else {
-    wrap.appendChild(select);
-    wrap.appendChild(button);
-    wrap.appendChild(panel);
-    anchor.insertAdjacentElement('afterend', wrap);
-  }
-
-  if (!avatarFilterGlobalDismissBound) {
-    document.addEventListener('click', (e) => {
-      const currentWrap = document.getElementById('avatar-filter-wrap');
-      if (!currentWrap) return;
-      const target = e.target;
-      const inside = target instanceof Node && currentWrap.contains(target);
-      if (!inside) setAvatarFilterPanelOpen(false);
-    });
-    avatarFilterGlobalDismissBound = true;
-  }
-
-  domRefs.avatarFilterSelect = select;
-  domRefs.avatarFilterToggle = button;
-  domRefs.avatarFilterPanel = panel;
-  bindAvatarFilterFallbackEvents();
-  syncAvatarFilterUI();
-  return select;
-}
-
-function refreshAvatarFilterOptions(assets = []) {
-  const select = ensureAvatarFilterSelect();
-  if (!select) return;
-
-  // Build a normalization map: for avatar items whose pool is Latin-only, map the
-  // Latin name → Japanese nameVariant so both sides collapse to one filter entry.
-  const avatarLatinToJaMap = new Map();
-  for (const asset of (Array.isArray(assets) ? assets : [])) {
-    if (!asset?.isAvatarItem) continue;
-    const nv = asset.nameVariants || {};
-    const jaName = String(
-      (Array.isArray(nv.katakana) && nv.katakana[0]) ||
-      (Array.isArray(nv.hiragana) && nv.hiragana[0]) || ''
-    ).trim();
-    if (!jaName) continue;
-    for (const poolName of getAssetAvatarPool(asset)) {
-      if (/^[a-z0-9\-\s_.,'!?/]+$/i.test(poolName) && poolName !== jaName) {
-        avatarLatinToJaMap.set(poolName, jaName);
-      }
-    }
-  }
-
-  const allNames = [];
-  for (const asset of (Array.isArray(assets) ? assets : [])) {
-    for (const n of getAssetAvatarPool(asset)) {
-      allNames.push(avatarLatinToJaMap.get(n) || n);
-    }
-  }
-  const normalizedNames = Array.from(new Set(
-    allNames.map((n) => String(n || '').trim()).filter(Boolean)
-  ));
-  const groupedNames = [];
-  const keyToGroupIndex = new Map();
-  for (const name of normalizedNames) {
-    const keys = avatarComparableKeys(name);
-    if (!keys.length) {
-      groupedNames.push({ names: [name], keys: new Set() });
-      continue;
-    }
-    const groupIndexes = Array.from(new Set(
-      keys.map((key) => keyToGroupIndex.get(key)).filter((index) => Number.isInteger(index))
-    ));
-    if (!groupIndexes.length) {
-      const nextIndex = groupedNames.length;
-      groupedNames.push({ names: [name], keys: new Set(keys) });
-      keys.forEach((key) => keyToGroupIndex.set(key, nextIndex));
-      continue;
-    }
-    const targetIndex = groupIndexes[0];
-    const target = groupedNames[targetIndex];
-    if (!target.names.includes(name)) target.names.push(name);
-    keys.forEach((key) => target.keys.add(key));
-    for (let i = groupIndexes.length - 1; i >= 1; i -= 1) {
-      const sourceIndex = groupIndexes[i];
-      const source = groupedNames[sourceIndex];
-      if (!source) continue;
-      for (const sourceName of source.names) {
-        if (!target.names.includes(sourceName)) target.names.push(sourceName);
-      }
-      for (const sourceKey of source.keys) target.keys.add(sourceKey);
-      groupedNames.splice(sourceIndex, 1);
-      for (const [key, index] of keyToGroupIndex.entries()) {
-        if (index === sourceIndex) keyToGroupIndex.set(key, targetIndex);
-        else if (index > sourceIndex) keyToGroupIndex.set(key, index - 1);
-      }
-    }
-    target.keys.forEach((key) => keyToGroupIndex.set(key, targetIndex));
-  }
-  const rankAvatarFilterName = (name) => {
-    const hasJapanese = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(name);
-    const hasLatin = /[A-Za-z]/.test(name);
-    if (hasJapanese && !hasLatin) return 0;
-    if (hasJapanese) return 1;
-    return 2;
-  };
-  const unique = groupedNames
-    .map((group) => group.names.slice().sort((a, b) => {
-      const rankDiff = rankAvatarFilterName(a) - rankAvatarFilterName(b);
-      if (rankDiff !== 0) return rankDiff;
-      const lengthDiff = a.length - b.length;
-      if (lengthDiff !== 0) return lengthDiff;
-      return a.localeCompare(b, 'ja');
-    })[0])
-    .sort((a, b) => a.localeCompare(b, 'ja'));
-  const assetsCount = Array.isArray(assets) ? assets.length : 0;
-  const withAvatar = (Array.isArray(assets) ? assets : []).filter((a) => getAssetAvatarPool(a).length > 0).length;
-  const sig = `${assetsCount}:${withAvatar}:${unique.length}`;
-  if (sig !== avatarDebugLastSignature) {
-    avatarDebugLastSignature = sig;
-    logAvatarDebug('refreshAvatarFilterOptions', {
-      assetsCount,
-      assetsWithAvatar: withAvatar,
-      uniqueAvatarCount: unique.length,
-      sample: unique.slice(0, 10),
-    });
-  }
-
-  const prev = normalizeAvatarFilterValue(state.avatarFilter);
-  const analyzed = hasAvatarDetailedAnalysisResult();
-  state.avatarImageMap = buildAvatarImageMap(assets);
-  const frag = document.createDocumentFragment();
-  const optAll = document.createElement('option');
-  optAll.value = '';
-  state.avatarFilterAllLabel = unique.length > 0
-    ? '絞り込みを解除'
-    : (analyzed ? 'アバター未検出' : 'アバター絞り込み（要解析）');
-  optAll.textContent = state.avatarFilterAllLabel;
-  frag.appendChild(optAll);
-  if (!unique.length && !analyzed) {
-    const optAnalyze = document.createElement('option');
-    optAnalyze.value = '__ANALYZE_REQUIRED__';
-    optAnalyze.textContent = '解析を実行...';
-    frag.appendChild(optAnalyze);
-  }
-  for (const name of unique) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = getAvatarDisplayName(name);
-    frag.appendChild(opt);
-  }
-  select.innerHTML = '';
-  select.appendChild(frag);
-  select.disabled = false;
-
-  const panel = document.getElementById('avatar-filter-panel');
-  if (panel) {
-    const header = [];
-    header.push(`
-      <button type="button" data-value="" class="w-full px-3 py-2 rounded-lg text-left text-[12px] text-zinc-400 hover:bg-white/15 hover:text-zinc-200 transition-colors flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-        <span>${esc(state.avatarFilterAllLabel)}</span>
-      </button>
-    `);
-    if (!unique.length && !analyzed) {
-      header.push(`
-      <button type="button" data-value="__ANALYZE_REQUIRED__" class="w-full px-3 py-2 rounded-lg text-left text-[12px] text-amber-300 hover:bg-amber-500/10 transition-colors flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>解析を実行...</span>
-      </button>
-    `);
-    }
-    const gridItems = unique.map((name) => {
-      const image = state.avatarImageMap?.get(name) || '';
-      const displayName = getAvatarDisplayName(name);
-      return `
-        <button type="button" data-value="${esc(name)}" class="avatar-grid-item flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-white/15 transition-colors text-center group">
-          <div class="avatar-grid-thumb relative w-full aspect-square rounded-xl overflow-hidden border border-white/10 bg-white/5 shrink-0 transition-all group-hover:border-white/30 group-hover:scale-[1.04]">
-            ${image
-              ? `<img src="${esc(image)}" class="w-full h-full object-cover" alt="">`
-              : `<div class="w-full h-full flex items-center justify-center text-zinc-600"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`}
-            <div class="avatar-grid-check absolute inset-0 bg-blue-500/30 flex items-center justify-center opacity-0 transition-opacity">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-          </div>
-          <span class="avatar-grid-label text-[11px] text-zinc-400 group-hover:text-zinc-200 truncate w-full leading-tight transition-colors" title="${esc(displayName)}">${esc(displayName)}</span>
-        </button>
-      `;
-    });
-    panel.innerHTML = `
-      <div class="mb-1">${header.join('')}</div>
-      ${unique.length ? `<div class="h-px bg-white/5 mx-1 mb-2"></div><div class="grid grid-cols-3 gap-1">${gridItems.join('')}</div>` : ''}
-    `;
-    panel.querySelectorAll('[data-value=""], [data-value="__ANALYZE_REQUIRED__"]').forEach((btn) => {
-      btn.addEventListener('mouseenter', () => { btn.style.backgroundColor = 'rgba(255,255,255,0.1)'; btn.style.color = '#e4e4e7'; });
-      btn.addEventListener('mouseleave', () => { btn.style.backgroundColor = ''; btn.style.color = ''; });
-    });
-    panel.querySelectorAll('.avatar-grid-item').forEach((btn) => {
-      btn.querySelectorAll('img').forEach((img) => {
-        img.addEventListener('error', () => { img.style.display = 'none'; });
-      });
-      const thumb = btn.querySelector('.avatar-grid-thumb');
-      const label = btn.querySelector('.avatar-grid-label');
-      btn.addEventListener('mouseenter', () => {
-        btn.style.backgroundColor = 'rgba(255,255,255,0.12)';
-        if (thumb) thumb.style.transform = 'scale(1.05)';
-        if (thumb) thumb.style.borderColor = 'rgba(255,255,255,0.3)';
-        if (label) label.style.color = '#e4e4e7';
-      });
-      btn.addEventListener('mouseleave', () => {
-        btn.style.backgroundColor = '';
-        if (thumb) thumb.style.transform = '';
-        if (thumb) thumb.style.borderColor = '';
-        if (label) label.style.color = '';
-      });
-    });
-  }
-
-  const prevKeys = new Set(avatarComparableKeys(prev));
-  const matchedPrev = prev && unique.length > 0
-    ? unique.find((name) => avatarComparableKeys(name).some((key) => prevKeys.has(key)))
-    : '';
-  if (matchedPrev) {
-    select.value = matchedPrev;
-    state.avatarFilter = matchedPrev;
-  } else {
-    select.value = '';
-    state.avatarFilter = '';
-    state.avatarFilters = [];
-  }
-  syncAvatarFilterUI();
-}
+const avatarFilterUi = window.AvatoolRenderAvatarFilterUi.createRenderAvatarFilterUi({
+  state,
+  domRefs,
+  esc,
+  logAvatarDebug,
+  getAssetAvatarPool,
+  avatarComparableKeys,
+  normalizeAvatarFilterValue,
+  buildAvatarImageMap,
+  hasAvatarDetailedAnalysisResult,
+  refreshAvatarAnalysisUI,
+  showTransientMessage: (...args) => showTransientMessage(...args),
+  showAvatarFilterAnalysisPromptModal: (...args) => showAvatarFilterAnalysisPromptModal(...args),
+  renderGrid: (...args) => renderGrid(...args),
+});
+const {
+  setAvatarFilterPanelOpen,
+  getAvatarDisplayName,
+  syncAvatarFilterUI,
+  ensureAvatarFilterSelect,
+  refreshAvatarFilterOptions,
+  handleAnalyzeAvatarCompatButtonClick,
+  handleAvatarFilterSelectionChange,
+  bindAnalyzeAvatarCompatButtonFallback,
+  bindAvatarFilterFallbackEvents,
+} = avatarFilterUi;
 
 function setupKeyboardShortcuts() {
   if (state.keyboardShortcutsBound) return;
@@ -3332,121 +2251,6 @@ function wireRendererModules() {
       window.logger?.warn?.('[boothClient] init failed', e?.message);
     }
   }
-}
-
-async function handleAnalyzeAvatarCompatButtonClick() {
-  const downloadedAssets = (Array.isArray(state.allAssets) ? state.allAssets : [])
-    .filter((asset) => asset.downloaded);
-  if (downloadedAssets.length === 0) {
-    showTransientMessage('ダウンロード済みのアイテムがありません。', 'info');
-    return;
-  }
-  const unanalyzedIds = downloadedAssets
-    .filter((asset) => !String(asset?.avatarAnalysisCheckedAt || '').trim())
-    .map((asset) => asset.itemId);
-  if (unanalyzedIds.length > 0) {
-    await refreshAvatarAnalysisUI({ onlyItemIds: unanalyzedIds });
-  } else {
-    // All items already analyzed — re-analyze everything.
-    const allIds = downloadedAssets.map((asset) => asset.itemId);
-    await refreshAvatarAnalysisUI({ onlyItemIds: allIds });
-  }
-}
-
-async function handleAvatarFilterSelectionChange(selectValue, { closePanelOnComplete = true } = {}) {
-  const select = domRefs.avatarFilterSelect || document.getElementById('avatar-filter-select');
-  if (!select) return;
-  const next = normalizeAvatarFilterValue(selectValue || '');
-  const prev = normalizeAvatarFilterValue(state.avatarFilter || '');
-  const needsAnalyze = next === '__ANALYZE_REQUIRED__' || (next && !hasAvatarDetailedAnalysisResult());
-  if (needsAnalyze) {
-    if (state.avatarFilterPromptBusy) return;
-    state.avatarFilterPromptBusy = true;
-    try {
-      const analyzed = await showAvatarFilterAnalysisPromptModal();
-      if (!analyzed) {
-        if (select.value !== prev) select.value = prev;
-        syncAvatarFilterUI();
-        return;
-      }
-      select.value = '';
-      state.avatarFilter = '';
-      state.avatarFilters = [];
-      setAvatarFilterPanelOpen(false);
-      syncAvatarFilterUI();
-      renderGrid();
-      return;
-    } finally {
-      state.avatarFilterPromptBusy = false;
-    }
-  }
-  if (select.value !== next) select.value = next;
-  if (prev !== next) {
-    state.avatarFilter = next;
-    syncAvatarFilterUI();
-    renderGrid();
-  } else {
-    syncAvatarFilterUI();
-  }
-  if (closePanelOnComplete) setAvatarFilterPanelOpen(false);
-}
-
-function bindAnalyzeAvatarCompatButtonFallback() {
-  const button = domRefs.analyzeAvatarCompatBtn;
-  if (!button || button.dataset.avatoolAnalyzeBound === '1') return;
-  button.dataset.avatoolAnalyzeBound = '1';
-  button.addEventListener('click', async () => {
-    await handleAnalyzeAvatarCompatButtonClick();
-  });
-}
-
-function bindAvatarFilterFallbackEvents() {
-  const avatarSelect = domRefs.avatarFilterSelect || document.getElementById('avatar-filter-select');
-  const avatarPanel = domRefs.avatarFilterPanel || document.getElementById('avatar-filter-panel');
-  const avatarToggle = domRefs.avatarFilterToggle || document.getElementById('avatar-filter-button');
-  if (!avatarSelect || !avatarPanel || !avatarToggle) return;
-  if (avatarToggle.dataset.avatoolAvatarFilterBound === '1') return;
-  avatarToggle.dataset.avatoolAvatarFilterBound = '1';
-  avatarPanel.dataset.avatoolAvatarFilterBound = '1';
-  avatarSelect.dataset.avatoolAvatarFilterBound = '1';
-
-  avatarToggle.addEventListener('click', async () => {
-    const next = normalizeAvatarFilterValue(avatarSelect.value || '');
-    if (next === '__ANALYZE_REQUIRED__' || (next && !hasAvatarDetailedAnalysisResult())) {
-      await handleAvatarFilterSelectionChange(next, { closePanelOnComplete: true });
-      return;
-    }
-    setAvatarFilterPanelOpen(!state.avatarFilterPanelOpen);
-  });
-
-  avatarPanel.addEventListener('click', async (event) => {
-    const button = event.target?.closest?.('[data-value]');
-    if (!button) return;
-    const next = normalizeAvatarFilterValue(button.dataset.value || '');
-    const needsAnalyze = next === '__ANALYZE_REQUIRED__' || (next && !hasAvatarDetailedAnalysisResult());
-    if (needsAnalyze) {
-      await handleAvatarFilterSelectionChange(next, { closePanelOnComplete: true });
-      return;
-    }
-    if (next === '') {
-      state.avatarFilters = [];
-      state.avatarFilter = '';
-      if (avatarSelect) avatarSelect.value = '';
-      setAvatarFilterPanelOpen(false);
-    } else {
-      const cur = Array.isArray(state.avatarFilters) ? state.avatarFilters : [];
-      const idx = cur.indexOf(next);
-      state.avatarFilters = idx >= 0 ? cur.filter((f) => f !== next) : [...cur, next];
-      state.avatarFilter = state.avatarFilters[0] || '';
-      if (avatarSelect) avatarSelect.value = state.avatarFilter;
-    }
-    syncAvatarFilterUI();
-    renderGrid();
-  });
-
-  avatarSelect.addEventListener('change', async (event) => {
-    await handleAvatarFilterSelectionChange(event?.target?.value || '', { closePanelOnComplete: true });
-  });
 }
 
 // ========== Initialization ==========
