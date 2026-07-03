@@ -795,8 +795,26 @@
       extBtn.style.cssText = 'font-size:10px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:#52525b;cursor:pointer;font-family:inherit;';
       extBtn.addEventListener('click', () => boothAPI.openExternalUrl(`https://booth.pm/ja/items/${item.itemId}`));
 
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = '外す';
+      removeBtn.style.cssText = 'font-size:10px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid rgba(244,63,94,0.3);background:rgba(244,63,94,0.08);color:#fda4af;cursor:pointer;font-family:inherit;';
+      removeBtn.addEventListener('click', async () => {
+        removeBtn.disabled = true; removeBtn.textContent = '...';
+        try {
+          const res = await boothAPI.toggleWishlist(String(item.itemId));
+          if (res?.ok) {
+            row.remove();
+            const el = document.getElementById('booth-wishlist-content');
+            if (el && !el.children.length) el.innerHTML = emptyState('ほしいリストにアイテムがありません');
+          } else {
+            removeBtn.textContent = 'エラー'; removeBtn.disabled = false;
+          }
+        } catch { removeBtn.textContent = 'エラー'; removeBtn.disabled = false; }
+      });
+
       btns.appendChild(cartBtn);
       btns.appendChild(extBtn);
+      btns.appendChild(removeBtn);
       row.appendChild(thumb);
       row.appendChild(info);
       row.appendChild(btns);
