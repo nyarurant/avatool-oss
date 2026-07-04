@@ -88,7 +88,7 @@ public static class BoothImportShared {
         }
         backedUpSourceByPackage[key] = backupAssetPath;
         AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
         Debug.Log(logTag + " Pre-import backup done: " + srcAssetPath + " -> " + backupAssetPath);
     }
 

@@ -315,6 +315,7 @@ public class BoothBatchImporter {
             }
 
             int totalBefore = CountAssetsFiles(assetsRoot);
+            int runningCount = totalBefore;
             int importedCount = 0;
             sPackageTotal = data.files.Length;
 
@@ -334,7 +335,7 @@ public class BoothBatchImporter {
                 Debug.Log("[BoothBatchImporter] PackageBegin: package=" + sPackageIndex + "/" + sPackageTotal + " estimatedAssets=" + sPackageEstimatedAssets + " path=" + pkgPath);
                 SendIpc("package-begin", "\"packageIndex\":" + sPackageIndex + ",\"packageTotal\":" + sPackageTotal + ",\"estimatedAssets\":" + sPackageEstimatedAssets + ",\"packagePath\":\"" + JsonEscape(pkgPath) + "\"");
 
-                int before = CountAssetsFiles(assetsRoot);
+                int before = runningCount;
                 Debug.Log("[BoothBatchImporter] Importing: " + pkgPath);
                 BoothImportShared.PrepareTopFolderForPackage(pkgPath, sRenameByPackage, sBackedUpSourceByPackage, "[BoothBatchImporter]");
                 sTrackAssetProgress = true;
@@ -344,17 +345,20 @@ public class BoothBatchImporter {
                     sTrackAssetProgress = false;
                 }
                 AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                ApplyTopFolderRenameForPackage(pkgPath);
-                AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                if (sRenameByPackage.ContainsKey(BoothImportShared.NormalizePathKey(pkgPath))) {
+                    ApplyTopFolderRenameForPackage(pkgPath);
+                    AssetDatabase.SaveAssets();
+                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                }
                 int after = CountAssetsFiles(assetsRoot);
+                runningCount = after;
                 Debug.Log("[BoothBatchImporter] Delta files: " + (after - before) + " (" + before + " -> " + after + ")");
                 importedCount += 1;
                 SendIpc("package-done", "\"packageIndex\":" + sPackageIndex + ",\"packageTotal\":" + sPackageTotal + ",\"importedPackages\":" + importedCount);
             }
 
-            int totalAfter = CountAssetsFiles(assetsRoot);
+            int totalAfter = runningCount;
             Debug.Log("[BoothBatchImporter] Imported packages: " + importedCount + "/" + data.files.Length);
             Debug.Log("[BoothBatchImporter] Total delta files: " + (totalAfter - totalBefore) + " (" + totalBefore + " -> " + totalAfter + ")");
             SendIpc("done", "\"importedPackages\":" + importedCount + ",\"totalPackages\":" + data.files.Length);
@@ -377,16 +381,11 @@ public class BoothBatchImporter {
 }
 
 public class BoothBatchImportProgressPostprocessor : AssetPostprocessor {
-    static void OnPostprocessAllAssets(
-        string[] importedAssets,
-        string[] deletedAssets,
-        string[] movedAssets,
-        string[] movedFromAssetPaths
-    ) {
+    // OnPreprocessAsset は個々のアセットが処理される直前に1件ずつ呼ばれるため、
+    // OnPostprocessAllAssets (パッケージ全体が終わった後に1回だけ、まとめて呼ばれる) と違い、
+    // インポート中に実際に1件ずつ進捗が進んでいく様子を検知できる。
+    void OnPreprocessAsset() {
         if (!BoothBatchImporter.IsTrackingAssetProgress) return;
-        int count = importedAssets != null ? importedAssets.Length : 0;
-        if (count > 0) {
-            BoothBatchImporter.NotifyImportedAssets(count);
-        }
+        BoothBatchImporter.NotifyImportedAssets(1);
     }
 }

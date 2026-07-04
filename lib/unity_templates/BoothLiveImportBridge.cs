@@ -174,7 +174,7 @@ public static class BoothLiveImportBridge {
                 }
                 BackedUpSourceByPackage.Remove(key);
                 AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 return;
             }
             BackedUpSourceByPackage.Remove(key);
@@ -218,7 +218,7 @@ public static class BoothLiveImportBridge {
         }
         BackedUpSourceByPackage.Remove(key);
         AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
     }
 
     private static void RestoreOnlyForPackage(string pkgPath) {
@@ -253,7 +253,7 @@ public static class BoothLiveImportBridge {
         }
         BackedUpSourceByPackage.Remove(key);
         AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
         Debug.Log("[BoothLiveImportBridge] Restore done: " + backupAssetPath + " -> " + srcAssetPath);
     }
 
