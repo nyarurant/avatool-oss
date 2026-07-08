@@ -153,9 +153,24 @@
     const logBtn = document.getElementById('log-btn');
     const restartBtn = document.getElementById('restart-btn');
 
+    // Update buttons only make sense once we know the update state: downloading
+    // before an update is confirmed available, or installing before it's downloaded,
+    // would just fail. Track the phase so button state always matches reality.
+    let updatePhase = null;
+
+    function syncUpdateButtons() {
+      downloadUpdateBtn.disabled = updatePhase !== 'available';
+      installUpdateBtn.disabled = updatePhase !== 'downloaded';
+    }
+
     function setBusy(on) {
-      [retryBtn, checkUpdateBtn, downloadUpdateBtn, installUpdateBtn, logBtn, restartBtn]
-        .forEach((button) => { button.disabled = on; });
+      [retryBtn, checkUpdateBtn, logBtn, restartBtn].forEach((button) => { button.disabled = on; });
+      if (on) {
+        downloadUpdateBtn.disabled = true;
+        installUpdateBtn.disabled = true;
+      } else {
+        syncUpdateButtons();
+      }
     }
 
     function setStatus(message, isError = false) {
@@ -235,10 +250,15 @@
       const phase = String(payload?.phase || '');
       const message = String(payload?.message || '').trim();
       if (!message && !phase) return;
+      if (phase) {
+        updatePhase = phase;
+        syncUpdateButtons();
+      }
       setStatus(message || `update: ${phase}`, phase === 'error');
     });
 
     window.addEventListener('DOMContentLoaded', () => {
+      syncUpdateButtons();
       refreshRecoveryState().catch((error) => {
         setStatus(error?.message || String(error), true);
       });
