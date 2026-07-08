@@ -3,6 +3,36 @@
  * Main renderer entry for UI composition, IPC wiring, and asset interactions.
  */
 
+// preload.js registers the same listeners in its own isolated JS world, but Electron's
+// contextIsolation means uncaught errors thrown in this page's world never reach them.
+// These must stay the first statements in this file to catch failures as early as possible.
+window.addEventListener('error', (event) => {
+  try {
+    const source = String(event?.filename || '');
+    if (!event?.error && source && !source.startsWith('file:')) return;
+    // Skip resource load errors (img/video/audio/link elements): these fire 'error'
+    // during the capture phase with no Error object and no message.
+    if (!event?.error && !event?.message) return;
+    window.boothAPI?.reportRendererFatalError?.('error', {
+      message: String(event?.message || event?.error?.message || 'Unknown renderer error'),
+      filename: source,
+      lineno: Number(event?.lineno || 0),
+      colno: Number(event?.colno || 0),
+      stack: String(event?.error?.stack || ''),
+    });
+  } catch { /* reporting must never throw */ }
+}, true);
+
+window.addEventListener('unhandledrejection', (event) => {
+  try {
+    const reason = event?.reason;
+    window.boothAPI?.reportRendererFatalError?.('unhandledrejection', {
+      message: String(reason?.message || reason || 'Unhandled promise rejection'),
+      stack: String(reason?.stack || ''),
+    });
+  } catch { /* reporting must never throw */ }
+});
+
 // ========== Constants & Configuration ==========
 
 const ICONS = {

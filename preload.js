@@ -105,6 +105,7 @@ contextBridge.exposeInMainWorld('boothAPI', {
   installAppUpdateNow: () => ipcRenderer.invoke('install-app-update-now'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
+  reportRendererFatalError: (kind, payload) => reportRendererFatal(kind, payload),
   getRendererRecoveryState: () => ipcRenderer.invoke('get-renderer-recovery-state'),
   reopenMainWindow: () => ipcRenderer.invoke('reopen-main-window'),
   restartApp: () => ipcRenderer.invoke('restart-app'),
