@@ -26,14 +26,18 @@
       const key = `${moduleKey}:${stage}:${message}`;
       if (rendererModuleFailureKeys.has(key)) return;
       rendererModuleFailureKeys.add(key);
+      const stack = String(error?.stack || '');
       rendererModuleFailures.push({
         moduleKey: String(moduleKey || 'unknown'),
         stage: String(stage || 'unknown'),
         message,
-        stack: String(error?.stack || ''),
+        stack,
         timestamp: new Date().toISOString(),
       });
       console.error(`[renderer-module:${moduleKey}] ${stage} failed`, error);
+      try {
+        win.boothAPI?.error?.(`[renderer-module:${moduleKey}] ${stage} failed: ${message}`, stack ? { stack } : undefined);
+      } catch { /* logging must never break the caller */ }
     }
 
     function callRendererModule(moduleKey, methodName, args) {
@@ -101,7 +105,9 @@
       }
       const text = banner.querySelector('#renderer-degraded-banner-text');
       if (text) {
-        text.textContent = `${failureCount} 件の初期化失敗を検出しました。影響モジュール: ${moduleNames || 'unknown'}`;
+        const lastFailure = rendererModuleFailures[rendererModuleFailures.length - 1];
+        const reason = lastFailure ? `（原因: ${lastFailure.message}）` : '';
+        text.textContent = `${failureCount} 件の初期化失敗を検出しました。影響モジュール: ${moduleNames || 'unknown'}${reason}`;
       }
     }
 
