@@ -1,6 +1,6 @@
 {
   "name": "avatool",
-  "version": "1.0.424",
+  "version": "1.0.425",
   "description": "",
   "main": "main.js",
   "scripts": {
@@ -37,7 +37,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^38.2.0",
+    "electron": "^43.1.0",
     "electron-builder": "^26.8.1",
     "express": "^5.2.1",
     "form-data": "^4.0.4",
@@ -56,6 +56,7 @@
   "build": {
     "appId": "xyz.necco.avatool",
     "productName": "Avatool",
+    "electronLanguages": ["en-US", "ja"],
     "files": [
       "**/*",
       "!release/**",
@@ -132,6 +133,6 @@
   "allowScripts": {
     "electron-winstaller@5.4.0": true,
     "unrs-resolver@1.11.1": true,
-    "electron@38.8.6": true
+    "electron@43.1.0": true
   }
 }
