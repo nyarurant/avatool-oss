@@ -45,7 +45,7 @@
       color: var(--muted);
       line-height: 1.6;
     }
-    .meta, .actions, .stack {
+    .meta {
       margin-top: 18px;
     }
     .meta-row {
@@ -85,6 +85,33 @@
       flex-wrap: wrap;
       gap: 10px;
     }
+    .actions-primary button {
+      width: 100%;
+      padding: 13px 14px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .actions-group {
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.015);
+    }
+    .actions-group .group-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+    .actions-secondary {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
+    }
     button {
       border: 1px solid var(--border);
       background: #101521;
@@ -98,9 +125,34 @@
       background: linear-gradient(135deg, var(--accent-2), var(--accent));
       border-color: rgba(96, 165, 250, 0.5);
     }
+    button.danger {
+      background: #101521;
+      color: #fda4af;
+      border-color: rgba(251, 113, 133, 0.35);
+    }
+    button.danger:hover:not(:disabled) {
+      background: rgba(190, 24, 93, 0.12);
+    }
     button:disabled {
       opacity: 0.55;
       cursor: default;
+    }
+    details.stack {
+      margin-top: 18px;
+    }
+    details.stack summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      user-select: none;
+    }
+    details.stack summary:hover {
+      color: var(--text);
+    }
+    details.stack pre {
+      margin-top: 10px;
     }
     pre {
       margin: 0;
@@ -124,21 +176,30 @@
 
       <div class="status" id="status-box">状態を読み込み中...</div>
 
-      <div class="actions">
+      <div class="actions-primary">
         <button class="primary" id="retry-btn">再試行</button>
-        <button id="check-update-btn">更新を確認</button>
-        <button id="download-update-btn">更新をダウンロード</button>
-        <button id="install-update-btn">更新を適用</button>
+      </div>
+
+      <div class="actions-group">
+        <div class="group-label">アップデート</div>
+        <div class="actions">
+          <button id="check-update-btn">更新を確認</button>
+          <button id="download-update-btn">更新をダウンロード</button>
+          <button id="install-update-btn">更新を適用</button>
+        </div>
+      </div>
+
+      <div class="actions-secondary">
         <button id="log-btn">ログを開く</button>
-        <button id="restart-btn">アプリ再起動</button>
+        <button class="danger" id="restart-btn">アプリ再起動</button>
       </div>
 
       <div class="meta" id="meta-box"></div>
 
-      <div class="stack">
-        <div class="label">Stack</div>
+      <details class="stack">
+        <summary>詳細を表示（スタックトレース）</summary>
         <pre id="stack-box">(stack unavailable)</pre>
-      </div>
+      </details>
     </div>
   </div>
 
