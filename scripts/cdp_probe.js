@@ -12,19 +12,42 @@ const PORT = 9222;
 async function getTarget() {
   return new Promise((resolve, reject) => {
     let data = '';
+    let settled = false;
+    // Electron's CDP HTTP server keeps the connection alive even when we send
+    // "Connection: close", so 'end' never fires — parse as soon as the body looks
+    // complete instead of waiting for the socket to close, and always time out.
     const req = net.createConnection(PORT, 'localhost', () => {
       req.write('GET /json HTTP/1.1\r\nHost: localhost:' + PORT + '\r\nConnection: close\r\n\r\n');
     });
-    req.on('data', d => { data += d; });
-    req.on('end', () => {
+    const timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(new Error('getTarget timed out waiting for CDP /json response.'));
+    }, 5000);
+    function settle(fn, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      fn(value);
+    }
+    req.on('data', d => {
+      data += d;
+      const bodyStart = data.indexOf('\r\n\r\n');
+      if (bodyStart === -1 || settled) return;
       try {
-        const json = data.slice(data.indexOf('\r\n\r\n') + 4);
-        const targets = JSON.parse(json);
+        const targets = JSON.parse(data.slice(bodyStart + 4));
         const page = targets.find(t => t.type === 'page');
-        resolve(page ? page.webSocketDebuggerUrl.replace('ws://localhost:9222', '') : null);
-      } catch(e) { reject(e); }
+        req.destroy();
+        settle(resolve, page ? page.webSocketDebuggerUrl.replace('ws://localhost:9222', '') : null);
+      } catch {
+        // body not fully received yet; keep buffering until it parses or we time out
+      }
     });
-    req.on('error', reject);
+    req.on('end', () => {
+      settle(reject, new Error('Connection closed before a valid /json response was received.'));
+    });
+    req.on('error', (e) => settle(reject, e));
   });
 }
 
@@ -39,6 +62,22 @@ async function cdpEval(expression) {
         `GET ${path} HTTP/1.1\r\nHost: localhost:${PORT}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`
       );
     });
+
+    let settled = false;
+    // Without clearing this on success, the dangling timer keeps the Node process
+    // alive for the full 15s even after we've already resolved.
+    const timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      client.destroy();
+      reject(new Error('timeout'));
+    }, 15000);
+    function settle(fn, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      fn(value);
+    }
 
     let upgraded = false, buf = Buffer.alloc(0);
 
@@ -84,9 +123,9 @@ async function cdpEval(expression) {
             if (msg.id === 1) {
               client.destroy();
               if (msg.result?.exceptionDetails) {
-                reject(new Error(msg.result.exceptionDetails.text));
+                settle(reject, new Error(msg.result.exceptionDetails.text));
               } else {
-                resolve(msg.result?.result?.value);
+                settle(resolve, msg.result?.result?.value);
               }
             }
           } catch {}
@@ -94,8 +133,7 @@ async function cdpEval(expression) {
       }
     });
 
-    client.on('error', reject);
-    setTimeout(() => { client.destroy(); reject(new Error('timeout')); }, 15000);
+    client.on('error', (e) => settle(reject, e));
   });
 }
 

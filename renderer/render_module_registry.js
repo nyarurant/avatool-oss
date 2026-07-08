@@ -84,7 +84,10 @@
       if (!rendererModuleFailures.length || !doc?.body) return;
       let banner = doc.getElementById('renderer-degraded-banner');
       const failureCount = rendererModuleFailures.length;
-      const moduleNames = Array.from(new Set(rendererModuleFailures.map((entry) => entry.moduleKey))).slice(0, 4).join(', ');
+      const uniqueModuleNames = Array.from(new Set(rendererModuleFailures.map((entry) => entry.moduleKey)));
+      const shownModuleNames = uniqueModuleNames.slice(0, 8);
+      const moduleNames = shownModuleNames.join(', ')
+        + (uniqueModuleNames.length > shownModuleNames.length ? ` 他${uniqueModuleNames.length - shownModuleNames.length}件` : '');
       if (!banner) {
         banner = doc.createElement('div');
         banner.id = 'renderer-degraded-banner';
@@ -105,8 +108,10 @@
       }
       const text = banner.querySelector('#renderer-degraded-banner-text');
       if (text) {
-        const lastFailure = rendererModuleFailures[rendererModuleFailures.length - 1];
-        const reason = lastFailure ? `（原因: ${lastFailure.message}）` : '';
+        // Prefer the first 'create' failure (the root cause) over later cascading
+        // soft-fails from other code trying to call the now-missing module.
+        const rootFailure = rendererModuleFailures.find((entry) => entry.stage === 'create') || rendererModuleFailures[0];
+        const reason = rootFailure ? `（原因: ${rootFailure.message}）` : '';
         text.textContent = `${failureCount} 件の初期化失敗を検出しました。影響モジュール: ${moduleNames || 'unknown'}${reason}`;
       }
     }
