@@ -711,11 +711,6 @@ function setUpdateActionUi(...args) { return callRendererModule('appState', 'set
 function setAutoUpdateNotifyButton(...args) { return callRendererModule('appState', 'setAutoUpdateNotifyButton', args); }
 function upsertPendingAutoUpdates(...args) { return callRendererModule('appState', 'upsertPendingAutoUpdates', args); }
 
-function isSuppressedNotificationType(type) {
-  const t = String(type || '').trim().toLowerCase();
-  return t === 'app-update' || t === 'library-updates';
-}
-
 function isSuppressedNotificationMessage(message) {
   const text = String(message || '').trim();
   if (!text) return false;
@@ -735,14 +730,6 @@ function isImportantTransientNotification(message, tone = 'info') {
   const text = String(message || '').trim();
   if (!text) return false;
   return /失敗|エラー|警告|できません|見つかりません|error|failed?|warn(ing)?/i.test(text);
-}
-
-function isImportantNotificationItem(item) {
-  if (!item || typeof item !== 'object') return false;
-  const type = String(item.type || '').trim().toLowerCase();
-  if (type !== 'transient') return true;
-  const tone = String(item?.payload?.tone || 'info');
-  return isImportantTransientNotification(item.message, tone);
 }
 
 function sanitizeNotificationCenterState(...args) {
