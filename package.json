@@ -130,8 +130,8 @@
     ]
   },
   "allowScripts": {
-    "electron@38.2.0": true,
     "electron-winstaller@5.4.0": true,
-    "unrs-resolver@1.11.1": true
+    "unrs-resolver@1.11.1": true,
+    "electron@38.8.6": true
   }
 }
