@@ -108,7 +108,7 @@
       }));
       updateAnalyzeAvatarCompatBtn();
       if (state.boothClient?.onAssetsLoaded) {
-        try { state.boothClient.onAssetsLoaded(state.allAssets); } catch {}
+        try { state.boothClient.onAssetsLoaded(state.allAssets); } catch { /* 任意フックの失敗は本処理に影響しないため無視 */ }
       }
     }
 

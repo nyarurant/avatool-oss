@@ -594,7 +594,10 @@
             setImportCloseDisabled(false);
             return;
           }
-        } catch {}
+        } catch (runningCheckErr) {
+          // 起動中判定に失敗すると安全チェックをスキップしたままインポートに進んでしまうため記録
+          console.warn('[import] running-project check failed, proceeding without the safety check:', runningCheckErr?.message || runningCheckErr);
+        }
         const resolved = await resolveImportTargetsFromModal();
         let { targetPaths, packagesForImport } = resolved;
 

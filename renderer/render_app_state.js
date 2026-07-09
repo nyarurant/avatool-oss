@@ -45,7 +45,7 @@
     function maybeShowShortcutsTutorialOnStartup() {
       try {
         if (localStorage.getItem(shortcutsTutorialSeenKey) === '1') return;
-      } catch {}
+      } catch { /* localStorage利用不可時はチュートリアルを表示する側にフォールバック */ }
       setTimeout(() => {
         if (isElementShown(domRefs.settingsModal)) return;
         if (document.querySelector('#shortcuts-tutorial-overlay')) return;

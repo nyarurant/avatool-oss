@@ -470,8 +470,7 @@ async function confirmOversizeZipEntryContinue(payload = {}) {
 }
 
 async function requestArchivePasswordViaRenderer(archivePath) {
-  const win = getMainWindow();
-  const sender = win?.webContents;
+  const sender = mainWindow?.webContents;
   if (!sender || sender.isDestroyed?.()) return null;
   const requestId = `archive-pw-${Date.now()}-${++archivePasswordSeq}`;
   return new Promise((resolve) => {
@@ -605,7 +604,7 @@ function emitAutoBootstrapStatus(payload) {
     const message = String(payload?.message || '');
     console.log('[AUTO-BOOTSTRAP][main]', phase, projectPath, message);
     if (phase === 'error' && message) appendOperationLog('auto-download', message);
-  } catch {}
+  } catch { /* ステータスログ記録の失敗は通知処理に影響しないため無視 */ }
   sendDesktopNotificationForAutoBootstrap(payload);
   const sender = mainWindow?.webContents;
   if (!sender || sender.isDestroyed?.()) return;
@@ -1478,12 +1477,12 @@ ipcMain.on('renderer-ready', (event) => {
   try {
     mainWindow.show();
     mainWindow.focus();
-  } catch {}
+  } catch { /* 表示/フォーカス失敗はウィンドウが既に表示済みの場合等に起こり得るため無視 */ }
   if (uiProbeService.isUiProbeEnabled()) {
     setTimeout(() => {
       uiProbeService.runUiProbe().catch((e) => {
         console.error('[ui-probe] failed:', e?.stack || e?.message || e);
-        try { app.exit(1); } catch {}
+        try { app.exit(1); } catch { /* デバッグ用終了処理の失敗は無視 */ }
       });
     }, 300);
   }
@@ -1511,7 +1510,7 @@ ipcMain.handle('reopen-main-window', async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.destroy();
     }
-  } catch {}
+  } catch { /* 破棄失敗時も新規ウィンドウ作成を優先して続行 */ }
   createWindow();
   return { ok: true, sessionId: rendererBootSessionId };
 });
@@ -1521,7 +1520,7 @@ ipcMain.handle('restart-app', async () => {
     try {
       app.relaunch();
       app.exit(0);
-    } catch {}
+    } catch { /* 再起動処理の失敗は無視(呼び出し元は既にok:trueを返却済み) */ }
   });
   return { ok: true };
 });

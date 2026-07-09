@@ -116,7 +116,7 @@
       `;
       const close = () => {
         overlay.remove();
-        try { localStorage.setItem(shortcutsTutorialSeenKey, '1'); } catch {}
+        try { localStorage.setItem(shortcutsTutorialSeenKey, '1'); } catch { /* localStorage利用不可時は次回も表示されるだけで無害 */ }
       };
       overlay.querySelector('#shortcuts-guide-close')?.addEventListener('click', close);
       overlay.addEventListener('click', (event) => {

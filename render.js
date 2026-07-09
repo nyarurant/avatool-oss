@@ -408,7 +408,6 @@ const domRefs = {
   modalTreePanel: document.getElementById('modal-tree-panel'),
   modalFilePanel: document.getElementById('modal-file-panel'),
   modalInspectorPanel: document.getElementById('modal-inspector-panel'),
-  modalOpenEntryBtn: document.getElementById('modal-open-entry'),
   importModal: document.getElementById('import-modal'),
   importProjectList: document.getElementById('import-project-list'),
   importPackagePath: document.getElementById('import-package-path'),

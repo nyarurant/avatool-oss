@@ -261,7 +261,7 @@ async function main() {
 
   if (!args.keep) {
     // Keep screenshots even when --keep is omitted; only remove the generated app data.
-    try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* 生成データ削除失敗は無視 */ }
   } else {
     console.log(`UI_PROBE_DATA=${dataDir}`);
   }

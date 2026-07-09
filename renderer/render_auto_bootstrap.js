@@ -390,7 +390,7 @@
           synthetic.value = initialFileKey;
           const raw = String(initialFileKey).replace(/^file:[^:]+:/, '');
           let decoded = raw;
-          try { decoded = decodeURIComponent(raw); } catch {}
+          try { decoded = decodeURIComponent(raw); } catch { /* デコード失敗時は生の文字列のまま表示 */ }
           synthetic.textContent = `${trimToExtractedRelative(decoded)} (未検出)`;
           fileSel.appendChild(synthetic);
         }

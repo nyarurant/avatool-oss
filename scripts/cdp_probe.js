@@ -128,7 +128,7 @@ async function cdpEval(expression) {
                 settle(resolve, msg.result?.result?.value);
               }
             }
-          } catch {}
+          } catch { /* デバッグ用CDPメッセージ解析の失敗は無視 */ }
         }
       }
     });

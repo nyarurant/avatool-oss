@@ -50,7 +50,7 @@
       const forceRedownload = Boolean(options?.forceRedownload);
       const payload = assets.map((a) => {
         const itemId = String(a.itemId || '');
-        const shouldAnalyzeAfterDownload = !forceRedownload && !Boolean(a?.downloaded);
+        const shouldAnalyzeAfterDownload = !forceRedownload && !a?.downloaded;
         return {
           itemId: a.itemId,
           title: a.title || '',

@@ -489,7 +489,7 @@ async function main() {
     try {
       const downloader = require(path.join(ROOT, 'lib/booth_downloader'));
       downloader.setDataRoot('');
-    } catch {}
+    } catch { /* テスト終了時のリセット失敗は無視 */ }
 
     try {
       await removeDirWithRetry(TEMP_DIR);
