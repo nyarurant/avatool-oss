@@ -49,6 +49,7 @@ const browserGlobals = {
   Element: 'readonly',
   confirm: 'readonly',
   alert: 'readonly',
+  TextDecoder: 'readonly',
 };
 
 const jestGlobals = {
@@ -73,6 +74,7 @@ module.exports = [
       '.data/**',
       'assets/styles/tailwind.generated.css',
       'unity_templates/**',
+      'renderer/vendor/**',
     ],
   },
   js.configs.recommended,
@@ -97,6 +99,13 @@ module.exports = [
     files: ['renderer/**/*.js', 'render.js', 'preload.js', 'log_preload.js'],
     languageOptions: {
       globals: { ...browserGlobals, require: 'readonly' },
+    },
+  },
+  {
+    // three.jsをESモジュールとして読み込むブリッジのみ、import/export構文が必要。
+    files: ['renderer/render_model_preview_three.js'],
+    languageOptions: {
+      sourceType: 'module',
     },
   },
   {
