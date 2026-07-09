@@ -152,19 +152,27 @@ describe('trimWrappedQuotes', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseEmergencyLatestBackupYml', () => {
-  const { _test: { parseEmergencyLatestBackupYml } } = makeUpdater();
+  const {
+    _test: {
+      parseEmergencyLatestBackupYml,
+      isSafeEmergencyArtifactPath,
+      isValidSha512Base64,
+      sha512Matches,
+    },
+  } = makeUpdater();
+  const validSha512 = Buffer.alloc(64, 0x5a).toString('base64');
 
   test('基本的な YAML フィールドを解析する', () => {
     const yaml = [
       'version: 1.0.341',
       'path: Avatool Setup 1.0.341.exe',
-      'sha512: abc123',
+      `sha512: ${validSha512}`,
       'releaseDate: 2026-01-01',
     ].join('\n');
     const result = parseEmergencyLatestBackupYml(yaml);
     expect(result.version).toBe('1.0.341');
     expect(result.path).toBe('Avatool Setup 1.0.341.exe');
-    expect(result.sha512).toBe('abc123');
+    expect(result.sha512).toBe(validSha512);
     expect(result.releaseDate).toBe('2026-01-01');
   });
 
@@ -174,10 +182,30 @@ describe('parseEmergencyLatestBackupYml', () => {
     expect(result.url).toContain('Avatool');
   });
 
-  test('url が明示されていれば path の自動生成より優先', () => {
+  test('manifest 内の url は無視して固定CDNのURLを使う', () => {
     const yaml = 'version: 1.0.0\npath: foo.exe\nurl: https://example.com/foo.exe\n';
     const result = parseEmergencyLatestBackupYml(yaml);
-    expect(result.url).toBe('https://example.com/foo.exe');
+    expect(result.url).toBe('https://cdn.necco.xyz/file/avatool/foo.exe');
+  });
+
+  test('危険な成果物パスでは URL を生成しない', () => {
+    const result = parseEmergencyLatestBackupYml('version: 1.0.0\npath: ../foo.exe\n');
+    expect(result.url).toBe('');
+  });
+
+  test('安全な成果物名だけを受け付ける', () => {
+    expect(isSafeEmergencyArtifactPath('Avatool Setup 1.0.426.exe')).toBe(true);
+    expect(isSafeEmergencyArtifactPath('../setup.exe')).toBe(false);
+    expect(isSafeEmergencyArtifactPath('https://example.com/setup.exe')).toBe(false);
+    expect(isSafeEmergencyArtifactPath('setup.msi')).toBe(false);
+  });
+
+  test('sha512 は完全な base64 SHA-512 ダイジェストを必須にする', () => {
+    expect(isValidSha512Base64(validSha512)).toBe(true);
+    expect(isValidSha512Base64('abc123')).toBe(false);
+    expect(isValidSha512Base64('')).toBe(false);
+    expect(sha512Matches(validSha512, validSha512)).toBe(true);
+    expect(sha512Matches(validSha512, Buffer.alloc(64, 0x5b).toString('base64'))).toBe(false);
   });
 
   test('releaseNotes のブロックスタイル (|-) を解析する', () => {
@@ -197,6 +225,36 @@ describe('parseEmergencyLatestBackupYml', () => {
     const result = parseEmergencyLatestBackupYml('');
     expect(result.version).toBe('');
     expect(result.url).toBe('');
+  });
+});
+
+describe('緊急更新メタデータの完全性', () => {
+  test('sha512 がないフォールバックを更新候補として受理しない', async () => {
+    const axios = {
+      get: jest.fn().mockResolvedValue({
+        status: 200,
+        data: 'version: 1.0.1\npath: Avatool Setup 1.0.1.exe\n',
+      }),
+    };
+    const electronAutoUpdater = {
+      checkForUpdates: jest.fn().mockRejectedValue(new Error('latest.yml: cannot parse update info')),
+    };
+    const updater = makeUpdater({
+      axios,
+      electronAutoUpdater,
+      app: {
+        isPackaged: true,
+        getVersion: jest.fn().mockReturnValue('1.0.0'),
+        getPath: jest.fn().mockReturnValue('/tmp'),
+      },
+    });
+
+    const result = await updater.checkForAppUpdate();
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('sha512');
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(axios.get.mock.calls[0][0]).toContain('latest-backup.yml');
   });
 });
 
