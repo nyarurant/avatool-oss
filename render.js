@@ -223,6 +223,7 @@ const createRenderSettingsTools = requireRendererFactory('AvatoolRenderSettingsT
 const createRenderAutoBootstrap = requireRendererFactory('AvatoolRenderAutoBootstrap', 'createRenderAutoBootstrap');
 const createRenderImportModal = requireRendererFactory('AvatoolRenderImportModal', 'createRenderImportModal');
 const createRenderPreviewModal = requireRendererFactory('AvatoolRenderPreviewModal', 'createRenderPreviewModal');
+const createRenderModelPreview = requireRendererFactory('AvatoolRenderModelPreview', 'createRenderModelPreview');
 const createRenderLibraryActions = requireRendererFactory('AvatoolRenderLibraryActions', 'createRenderLibraryActions');
 const createRenderAssetList = requireRendererFactory('AvatoolRenderAssetList', 'createRenderAssetList');
 const createRenderQueueUI = requireRendererFactory('AvatoolRenderQueueUI', 'createRenderQueueUI');
@@ -301,6 +302,7 @@ const domRefs = {
   settingSafeMode: document.getElementById('setting-safe-mode'),
   settingHealthCheckOnStartup: document.getElementById('setting-health-check-on-startup'),
   settingDebugLogEnabled: document.getElementById('setting-debug-log-enabled'),
+  settingExperimentalModelPreview: document.getElementById('setting-experimental-model-preview'),
   settingAppVersion: document.getElementById('setting-app-version'),
   settingAppUpdateCheck: document.getElementById('setting-app-update-check'),
   settingAppUpdateStatus: document.getElementById('setting-app-update-status'),
@@ -2107,6 +2109,19 @@ function wireRendererModules() {
     getUnityImportErrorMessage = importModalUi.getUnityImportErrorMessage;
   }
 
+  const modelPreviewUi = safeCreateRendererModule('modelPreview', () => createRenderModelPreview({
+    boothAPI: window.boothAPI,
+    esc,
+    showTransientMessage,
+    logger: window.logger,
+  }));
+  let openModelPreview = null;
+  let closeModelPreview = null;
+  if (modelPreviewUi) {
+    openModelPreview = modelPreviewUi.openModelPreview;
+    closeModelPreview = modelPreviewUi.closeModelPreview;
+  }
+
   const previewModalUi = safeCreateRendererModule('previewModal', () => createRenderPreviewModal({
     state,
     domRefs,
@@ -2132,6 +2147,8 @@ function wireRendererModules() {
     updateUserMeta: window.boothAPI?.updateUserMeta
       ? (itemId, patch) => window.boothAPI.updateUserMeta(itemId, patch)
       : null,
+    openModelPreview,
+    closeModelPreview,
     icons: ICONS,
     logger: window.logger,
   }));

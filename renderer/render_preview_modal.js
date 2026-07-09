@@ -20,6 +20,8 @@
     const setImportCloseDisabled = deps?.setImportCloseDisabled;
     const resetImportProgress = deps?.resetImportProgress;
     const setAvatarFilterPanelOpen = deps?.setAvatarFilterPanelOpen;
+    const openModelPreview = deps?.openModelPreview;
+    const closeModelPreview = deps?.closeModelPreview;
     const icons = deps?.icons || {};
     const logger = deps?.logger || global.console;
     const updateUserMeta = deps?.updateUserMeta;
@@ -470,6 +472,18 @@
         actionsEl.appendChild(btn);
       }
 
+      const isMeshCandidate = !isDir && (isUnityPackage || ext === 'fbx' || ext === 'obj');
+      if (isMeshCandidate && actionsEl && openModelPreview && state.settings?.experimentalModelPreview) {
+        const btn = document.createElement('button');
+        btn.id = 'btn-open-model-preview';
+        btn.className = 'w-full mt-2 px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-zinc-100 text-[11px] font-medium rounded-lg transition flex items-center justify-center gap-1.5';
+        btn.innerHTML = '<span>3Dプレビュー</span><span class="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">beta</span>';
+        btn.addEventListener('click', () => {
+          openModelPreview(selectedAsset, entry).catch((error) => logger?.error?.(error));
+        });
+        actionsEl.appendChild(btn);
+      }
+
       if (domRefs.modalOpenEntryBtn && boothAPI.openExtractedEntry && selectedAsset && !isDir) {
         domRefs.modalOpenEntryBtn.onclick = async () => {
           const res = await boothAPI.openExtractedEntry(selectedAsset.itemId, selectedAsset.title || '', entry.relPath);
@@ -627,6 +641,7 @@
     }
 
     function closePreviewModal() {
+      closeModelPreview?.();
       setWishlistOnlyLayout(false);
       domRefs.previewOverlay?.classList.add('hidden');
       domRefs.previewOverlay?.classList.remove('flex');

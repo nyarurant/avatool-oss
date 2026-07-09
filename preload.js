@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('boothAPI', {
   openItemFolder: (itemId, title) => ipcRenderer.invoke('open-item-folder', itemId, title),
   listItemFiles: (itemId, title) => ipcRenderer.invoke('list-item-files', itemId, title),
   openExtractedEntry: (itemId, title, relPath) => ipcRenderer.invoke('open-extracted-entry', itemId, title, relPath),
+  prepareModelPreview: (itemId, title, relPath) => ipcRenderer.invoke('prepare-model-preview', itemId, title, relPath),
+  readModelPreviewFile: (itemId, title, root, relPath) => ipcRenderer.invoke('read-model-preview-file', itemId, title, root, relPath),
   syncLibrary: (options) => ipcRenderer.invoke('sync-library', options),
   analyzeAvatarCompatibility: (options) => ipcRenderer.invoke('analyze-avatar-compatibility', options),
   confirmAvatarCompatibility: (itemId, avatarName, options = {}) => ipcRenderer.invoke('confirm-avatar-compatibility', {

@@ -148,6 +148,7 @@
       if (domRefs.settingSafeMode) domRefs.settingSafeMode.checked = Boolean(state.settings.safeMode);
       if (domRefs.settingHealthCheckOnStartup) domRefs.settingHealthCheckOnStartup.checked = state.settings.healthCheckOnStartup !== false;
       if (domRefs.settingDebugLogEnabled) domRefs.settingDebugLogEnabled.checked = Boolean(state.settings.debugLogEnabled);
+      if (domRefs.settingExperimentalModelPreview) domRefs.settingExperimentalModelPreview.checked = Boolean(state.settings.experimentalModelPreview);
       if (domRefs.settingRenderMode) domRefs.settingRenderMode.value = getRenderModeSetting();
       if (domRefs.settingAppVersion && boothAPI.getAppVersion) {
         try {
@@ -233,6 +234,7 @@
         safeMode: Boolean(domRefs.settingSafeMode?.checked),
         healthCheckOnStartup: Boolean(domRefs.settingHealthCheckOnStartup?.checked),
         debugLogEnabled: Boolean(domRefs.settingDebugLogEnabled?.checked),
+        experimentalModelPreview: Boolean(domRefs.settingExperimentalModelPreview?.checked),
         keyboardShortcutsEnabled: Boolean(domRefs.settingKeyboardShortcutsEnabled?.checked),
         keyboardShortcuts: parsedShortcuts,
         downloadSchedulerEnabled: Boolean(domRefs.settingSchedulerEnabled?.checked),

@@ -1154,6 +1154,16 @@
                   <span class="slider"></span>
                 </label>
               </div>
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">3Dモデルプレビュー（beta）</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">Unityを起動せずに.fbx/.objや.unitypackage内のモデルを表示・回転できるようにする。実際の見た目（シェーダー等）とは異なる場合があります。</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-experimental-model-preview" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
             </div>
             <div class="settings-inline-actions mt-5 pt-4 border-t border-white/5">
               <div class="text-[11px] text-zinc-400">
@@ -1466,11 +1476,13 @@
   <script src="./renderer/render_auto_bootstrap.js"></script>
   <script src="./renderer/render_import_modal.js"></script>
   <script src="./renderer/render_preview_modal.js"></script>
+  <script src="./renderer/render_model_preview.js"></script>
   <script src="./renderer/render_library_actions.js"></script>
   <script src="./renderer/render_asset_list.js"></script>
   <script src="./renderer/render_queue_ui.js"></script>
   <script src="./renderer/render_booth_search.js"></script>
   <script src="./renderer/render_booth_client.js"></script>
+  <script type="module" src="./renderer/render_model_preview_three.js"></script>
   <script src="./render.js"></script>
 
   <!-- BOOTH検索モーダル（全画面オーバーレイ） -->

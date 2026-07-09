@@ -206,6 +206,7 @@ const DEFAULT_SETTINGS = {
   keyboardShortcutsEnabled: true,
   renderMode: 'progressive',
   keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
+  experimentalModelPreview: false,
 };
 const APP_UPDATE_AUTO_CHECK_INTERVAL_MIN = 30;
 const ALLOWED_SETTINGS_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
