@@ -1,0 +1,73 @@
+name: Bug report
+description: Avatool の不具合を報告する
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。Cookie、token、パスワード、購入物そのものなどの機密情報は貼らないでください。セキュリティ問題は SECURITY.md の手順を使用してください。
+  - type: input
+    id: version
+    attributes:
+      label: Avatool version
+      placeholder: "例: 1.0.427"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "例: Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: unity
+    attributes:
+      label: Unity / VCC version
+      description: 関係する場合のみ記載してください。
+  - type: textarea
+    id: description
+    attributes:
+      label: 問題の内容
+      description: 何が起きているかを簡潔に説明してください。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した動作
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ / スクリーンショット
+      description: 必ず Cookie、token、個人情報、ローカルユーザー名等を削除してから添付してください。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認
+      options:
+        - label: 最新版でも再現することを確認しました。
+          required: true
+        - label: Issue 内に認証情報や再配布できない購入物を含めていません。
+          required: true
+        - label: セキュリティ脆弱性の報告ではありません。
+          required: true

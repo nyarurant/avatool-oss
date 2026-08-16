@@ -1,0 +1,38 @@
+name: Feature request
+description: 新機能や改善案を提案する
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解決したい問題
+      description: 現在どのような作業・不便があるかを説明してください。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案する変更
+      description: どのような動作やUIがあると解決できるかを説明してください。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 代替案
+      description: すでに試した回避策や、他に考えられる方法があれば記載してください。
+  - type: textarea
+    id: context
+    attributes:
+      label: 補足
+      description: モック、スクリーンショット、関連Issueなどがあれば追加してください。機密情報や購入物そのものは添付しないでください。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認
+      options:
+        - label: 既存Issueに同じ提案がないか確認しました。
+          required: true
+        - label: Issue 内に認証情報や再配布できない購入物を含めていません。
+          required: true
