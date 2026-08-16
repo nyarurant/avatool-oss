@@ -80,6 +80,8 @@ function createDemoData(dataDir) {
     projectImportPresets: {},
     cookieFile: path.join(dataDir, 'booth.pm.json'),
     unityEditorPath: '',
+    // Populated at startup from the fake VCC registry demo_readme.js sets up
+    // via a redirected LOCALAPPDATA — see lib/vcc_sync_service.js.
     unityProjects: [],
     safeMode: true,
     healthCheckOnStartup: false,

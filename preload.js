@@ -115,6 +115,8 @@ contextBridge.exposeInMainWorld('boothAPI', {
   installAppUpdateNow: () => ipcRenderer.invoke('install-app-update-now'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getAppEdition: () => ipcRenderer.invoke('get-app-edition'),
+  demoSimulateDownload: (payload) => ipcRenderer.invoke('demo-simulate-download', payload),
+  demoSimulateUnityImport: () => ipcRenderer.invoke('demo-simulate-unity-import'),
   getOwnerVaultStatus: (remote = false) => ipcRenderer.invoke('owner-vault-status', { remote }),
   getOwnerStandardDataStatus: () => ipcRenderer.invoke('owner-standard-data-status'),
   importOwnerStandardData: () => ipcRenderer.invoke('owner-import-standard-data'),

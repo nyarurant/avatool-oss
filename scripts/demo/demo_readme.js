@@ -189,6 +189,22 @@ async function main() {
 
   createDemoData(dataDir);
 
+  // main.js reads the real VCC project registry from
+  // %LOCALAPPDATA%\VRChatCreatorCompanion\settings.json unconditionally
+  // (lib/vcc_sync_service.js) — this is NOT scoped by AVATOOL_DATA_DIR, so
+  // without this override the demo's import-project list would show the
+  // operator's real Unity project names and paths. Point LOCALAPPDATA at an
+  // isolated fake registry with one fictional project instead.
+  const fakeLocalAppData = path.join(base, 'fake_local_appdata');
+  const fakeVccProjectPath = path.join(fakeLocalAppData, 'SampleAvatarProject');
+  fs.mkdirSync(fakeVccProjectPath, { recursive: true });
+  fs.mkdirSync(path.join(fakeLocalAppData, 'VRChatCreatorCompanion'), { recursive: true });
+  fs.writeFileSync(
+    path.join(fakeLocalAppData, 'VRChatCreatorCompanion', 'settings.json'),
+    JSON.stringify({ userProjects: [fakeVccProjectPath], preferredUnityEditors: {} }, null, 2),
+    'utf8'
+  );
+
   const electronCmd = require('electron');
   const child = spawn(electronCmd, ['.', `--remote-debugging-port=${CDP_PORT}`], {
     cwd: ROOT,
@@ -197,6 +213,8 @@ async function main() {
       AVATOOL_DATA_DIR: dataDir,
       AVATOOL_KEEP_SESSION: 'false',
       AVATOOL_EDITION: '',
+      AVATOOL_DEMO_RECORDING: '1',
+      LOCALAPPDATA: fakeLocalAppData,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -252,35 +270,62 @@ async function main() {
       }
     })();
 
+    // Storyboard: static library -> select asset -> Download -> progress ->
+    // complete -> Import -> Unity import progress -> complete -> hold -> loop.
+    // Every screen shown is the REAL production UI (queue bar, progress bar,
+    // package-selection/import modals). Only two things are faked, both via
+    // lib/demo_recording_service.js (active only when AVATOOL_DEMO_RECORDING
+    // is set): the download-queue/download-progress event *source* (no real
+    // BOOTH network call), and the unity-import-progress event *source* (no
+    // real Unity CLI invocation). Everything downstream of those events —
+    // rendering, button-state transitions, file listing — is genuine app
+    // code running against real (demo-placeholder) files this writes to disk.
+    const ITEM_ID = '80001';
+    const ITEM_TITLE = 'Moonlight Kimono';
+    const ITEM_FILE = 'Moonlight_Kimono.zip';
+    const CARD = `[data-item-id="${ITEM_ID}"]`;
+    const DL_BTN = `[data-item-id="${ITEM_ID}"] .dl-btn`;
+
+    await evalJs(send, `window.__demoCursor.pause(400)`); // static library screen
     await evalJs(send, `window.__demoCursor.show()`);
-    await evalJs(send, `window.__demoCursor.moveTo('#search-input', 500)`);
-    await evalJs(send, `window.__demoCursor.typeInto('#search-input', 'Kimono', 70)`);
+
+    await evalJs(send, `window.__demoCursor.moveTo('${CARD}', 600)`);
+    await evalJs(send, `window.__demoCursor.clickVisual('${CARD}')`); // visual only: opening the preview isn't part of this storyboard
+    await delay(150);
+
+    await evalJs(send, `window.__demoCursor.moveTo('${DL_BTN}', 550)`);
+    // Visual-only: a real click here would call the real BOOTH download path.
+    await evalJs(send, `window.__demoCursor.clickVisual('${DL_BTN}')`);
+    await evalJs(send, `window.boothAPI.demoSimulateDownload({ itemId: '${ITEM_ID}', title: '${ITEM_TITLE}', fileName: '${ITEM_FILE}' })`);
+    await delay(400); // let the real assets-refreshed re-render settle (dl-btn now reads インポート)
+
+    await evalJs(send, `window.__demoCursor.moveTo('${DL_BTN}', 500)`);
+    await evalJs(send, `window.__demoCursor.click('${DL_BTN}')`); // real click: opens the real package-selection modal
     await delay(500);
-    await evalJs(send, `(async () => {
-      document.querySelector('#search-input').value = '';
-      document.querySelector('#search-input').dispatchEvent(new Event('input', { bubbles: true }));
-      await window.__demoCursor.pause(250);
-    })()`);
 
-    await evalJs(send, `window.__demoCursor.moveTo('[data-item-id="80004"]', 600)`);
-    await evalJs(send, `window.__demoCursor.click('[data-item-id="80004"]')`);
-    await delay(900);
-    await evalJs(send, `window.__demoCursor.moveTo('#modal-close', 500)`);
-    await evalJs(send, `window.__demoCursor.click('#modal-close')`);
+    await evalJs(send, `window.__demoCursor.moveTo('#pkg-mode-bg-btn', 450)`);
+    await evalJs(send, `window.__demoCursor.click('#pkg-mode-bg-btn')`); // real: switches to background mode (no live-Unity requirement)
+    await delay(250);
 
-    await delay(200);
-    await evalJs(send, `window.__demoCursor.moveTo('#settings-btn', 550)`);
-    await evalJs(send, `window.__demoCursor.click('#settings-btn')`);
-    await delay(700);
-    // Only the Download tab (the default) is shown here — other tabs (Unity,
-    // Cookie, ...) can surface real machine-local paths/state that isn't
-    // sandboxed by AVATOOL_DATA_DIR and must never end up in a public GIF.
-    await evalJs(send, `window.__demoCursor.moveTo('#settings-close', 450)`);
-    await evalJs(send, `window.__demoCursor.click('#settings-close')`);
+    await evalJs(send, `window.__demoCursor.moveTo('#pkg-select-confirm', 450)`);
+    await evalJs(send, `window.__demoCursor.click('#pkg-select-confirm')`); // real: safely opens the import modal (just lists Unity projects)
+    await delay(500);
 
-    await evalJs(send, `window.__demoCursor.pause(500)`);
+    await evalJs(send, `window.__demoCursor.moveTo('#import-project-list > div:first-child', 500)`);
+    await evalJs(send, `window.__demoCursor.click('#import-project-list > div:first-child')`); // real: selects the demo project
+    await delay(300);
+
+    await evalJs(send, `window.__demoCursor.moveTo('#import-execute', 450)`);
+    // Visual-only: a real click here would invoke the real Unity import pipeline.
+    await evalJs(send, `window.__demoCursor.clickVisual('#import-execute')`);
+    await evalJs(send, `window.boothAPI.demoSimulateUnityImport()`); // fires real unity-import-progress events into the now-open real modal
+    await delay(400);
+
+    await evalJs(send, `window.__demoCursor.moveTo('#import-close', 450)`);
+    await evalJs(send, `window.__demoCursor.click('#import-close')`); // real: closes the modal
+
     await evalJs(send, `window.__demoCursor.hide()`);
-    await delay(600);
+    await delay(1000); // static hold before the GIF loops
 
     capturing = false;
     await captureLoop;
@@ -304,6 +349,7 @@ async function main() {
       '-i', path.join(framesDir, 'frame_%05d.png'),
       '-i', palettePath,
       '-lavfi', `fps=${effectiveFps},scale=${GIF_WIDTH}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer`,
+      '-loop', '0',
       OUT_PATH,
     ], { stdio: 'inherit' });
 

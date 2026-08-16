@@ -4,6 +4,12 @@
   // README demo recording helper. Injected at runtime via CDP Runtime.evaluate
   // by scripts/demo_readme.js — never shipped with the app (scripts/** is
   // excluded from both the packaged build and source-<version>.zip).
+  //
+  // This only draws a fake cursor + click ripple on top of the real,
+  // unmodified app UI. It never fabricates its own progress/status UI —
+  // anything that looks like app state (queue bar, progress bars, button
+  // text) must come from the real UI, driven by real events (see
+  // lib/demo_recording_service.js) or real clicks.
 
   if (global.__demoCursor) return;
 
@@ -98,8 +104,7 @@
     });
   }
 
-  async function click(selector) {
-    const { x, y, el } = selector ? targetPoint(selector) : { x: pos.x, y: pos.y, el: null };
+  async function ripple(x, y) {
     const ring = document.createElement('div');
     ring.className = 'demo-click-ring';
     ring.style.left = x + 'px';
@@ -108,10 +113,25 @@
     cursor.style.transform = 'translate(-6px, -4px) scale(.85)';
     await sleep(90);
     cursor.style.transform = 'translate(-6px, -4px) scale(1)';
-    if (el) el.click();
-    else if (document.elementFromPoint) document.elementFromPoint(x, y)?.click?.();
     await sleep(400);
     ring.remove();
+  }
+
+  // Real click: dispatches the click at the cursor's current target, so it
+  // runs the app's real event handler.
+  async function click(selector) {
+    const { x, y, el } = selector ? targetPoint(selector) : { x: pos.x, y: pos.y, el: null };
+    await ripple(x, y);
+    if (el) el.click();
+    else if (document.elementFromPoint) document.elementFromPoint(x, y)?.click?.();
+  }
+
+  // Visual-only click: same ripple/bounce, but never dispatches the real
+  // click — used where the real handler would hit the network or spawn a
+  // real Unity process (see demo_readme.js for which steps need this).
+  async function clickVisual(selector) {
+    const { x, y } = targetPoint(selector);
+    await ripple(x, y);
   }
 
   async function typeInto(selector, text, perCharMs = 55) {
@@ -130,5 +150,5 @@
     await sleep(ms);
   }
 
-  global.__demoCursor = { show, hide, moveTo, click, typeInto, pause };
+  global.__demoCursor = { show, hide, moveTo, click, clickVisual, typeInto, pause };
 })(window);

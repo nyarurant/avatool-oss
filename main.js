@@ -26,6 +26,7 @@ const { createDesktopNotifications } = require('./lib/desktop_notifications');
 const { createBoothCartService } = require('./lib/booth_cart_service');
 const { createBoothItemEnrichment } = require('./lib/booth_item_enrichment');
 const { createUiProbeService } = require('./lib/ui_probe_service');
+const { createDemoRecordingService } = require('./lib/demo_recording_service');
 const { createDownloadQueue } = require('./lib/download_queue');
 const { ensureWindowsStartupRegistration, setupSingleInstanceLock, runBoothSmokeTest } = require('./lib/app_bootstrap');
 const { resolveExportBundlePath: resolveExportBundlePathImpl } = require('./lib/export_bundle');
@@ -2252,6 +2253,13 @@ const uiProbeService = createUiProbeService({
   appDataRoot: APP_DATA_ROOT,
 });
 
+const demoRecordingService = createDemoRecordingService({
+  getMainWindow: () => mainWindow,
+  fs,
+  path,
+  appDataRoot: APP_DATA_ROOT,
+});
+
 ipcMain.on('renderer-ready', (event) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (event.sender !== mainWindow.webContents) return;
@@ -2361,6 +2369,7 @@ registerIpcHandlers({
   },
   appUpdater,
   agentIntegrationService,
+  demoRecordingService,
   appEdition: APP_EDITION,
   ownerVaultService,
   getOwnerStandardDataStatus,
