@@ -98,7 +98,7 @@ module.exports = [
     },
   },
   {
-    files: ['renderer/**/*.js', 'render.js', 'preload.js', 'log_preload.js', 'owner/render_owner_vault.js', 'scripts/demo/demo_cursor.js'],
+    files: ['renderer/**/*.js', 'render.js', 'preload.js', 'log_preload.js', 'scripts/demo/demo_cursor.js'],
     languageOptions: {
       globals: { ...browserGlobals, require: 'readonly' },
     },
