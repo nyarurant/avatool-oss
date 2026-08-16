@@ -1,7 +1,7 @@
 {
   "name": "avatool",
   "version": "1.0.427",
-  "description": "",
+  "description": "BOOTH asset management and Unity workflow automation for VRChat creators",
   "main": "main.js",
   "scripts": {
     "build:css": "tailwindcss -i ./assets/styles/tailwind.input.css -o ./assets/styles/tailwind.generated.css --minify",
@@ -37,9 +37,25 @@
       "lib/**/*.js"
     ]
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "vrchat",
+    "booth",
+    "unity",
+    "electron",
+    "asset-management",
+    "vcc",
+    "vpm"
+  ],
+  "author": "nyarurant",
   "license": "ISC",
+  "homepage": "https://github.com/nyarurant/avatool-oss#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nyarurant/avatool-oss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nyarurant/avatool-oss/issues"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "electron": "^43.3.0",
