@@ -2294,22 +2294,6 @@ function wireRendererModules() {
 // ========== Initialization ==========
 
 window.addEventListener('DOMContentLoaded', async () => {
-  await safeRunRendererStartupStep('ownerVaultUi', async () => {
-    // Standard builds never ship owner/render_owner_vault.js (excluded from
-    // package.json build.files), so this script is only injected after the
-    // main process confirms the running edition is 'owner'.
-    const edition = await window.boothAPI?.getAppEdition?.();
-    if (!(edition?.owner === true || edition?.edition === 'owner')) return;
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = './owner/render_owner_vault.js';
-      script.onload = resolve;
-      script.onerror = () => reject(new Error('failed to load owner/render_owner_vault.js'));
-      document.head.appendChild(script);
-    });
-    const ownerVaultUi = window.AvatoolOwnerVaultUI?.createOwnerVaultUI?.(window.boothAPI);
-    if (ownerVaultUi) await ownerVaultUi.init();
-  });
   await safeRunRendererStartupStep('wireRendererModules', async () => {
     wireRendererModules();
   });

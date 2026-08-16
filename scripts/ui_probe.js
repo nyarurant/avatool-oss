@@ -12,12 +12,10 @@ function parseArgs(argv) {
     keep: false,
     dataDir: '',
     outDir: '',
-    owner: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = String(argv[i] || '');
     if (arg === '--keep') out.keep = true;
-    else if (arg === '--owner') out.owner = true;
     else if (arg === '--data-dir') out.dataDir = String(argv[++i] || '');
     else if (arg.startsWith('--data-dir=')) out.dataDir = arg.slice('--data-dir='.length);
     else if (arg === '--out') out.outDir = String(argv[++i] || '');
@@ -147,7 +145,7 @@ function createProbeData(dataDir) {
   });
 }
 
-function summarizeReport(reportPath, options = {}) {
+function summarizeReport(reportPath) {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
   const rows = Array.isArray(report.steps) ? report.steps : [];
   const issues = [];
@@ -163,14 +161,8 @@ function summarizeReport(reportPath, options = {}) {
     if (row.step === 'settings_modal' && !state.settingsOpen) {
       issues.push(`${row.step}: settings modal did not open`);
     }
-    if (options.owner && row.step === 'settings_modal' && (!state.ownerBadgeVisible || !state.ownerVaultTabVisible || state.title !== 'Avatool Owner')) {
-      issues.push(`${row.step}: Owner edition UI was not visible`);
-    }
-    if (!options.owner && row.step === 'settings_modal' && (state.ownerBadgeVisible || state.ownerVaultTabVisible || state.ownerVaultPanelVisible || state.title !== 'Avatool')) {
-      issues.push(`${row.step}: Owner edition UI leaked into the standard edition`);
-    }
-    if (options.owner && row.step === 'owner_vault_panel' && !state.ownerVaultPanelVisible) {
-      issues.push(`${row.step}: Owner Vault panel did not open`);
+    if (row.step === 'settings_modal' && state.title !== 'Avatool') {
+      issues.push(`${row.step}: unexpected window title (${state.title})`);
     }
     if (row.step === 'download_progress' && !String(state.queue?.state || '').trim()) {
       issues.push(`${row.step}: queue state empty`);
@@ -206,7 +198,7 @@ function summarizeReport(reportPath, options = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const uniqueRun = `${Date.now().toString(36)}_${process.pid}_${args.owner ? 'o' : 's'}`;
+  const uniqueRun = `${Date.now().toString(36)}_${process.pid}`;
   const base = path.join(os.tmpdir(), `avtp_${uniqueRun}`);
   const dataDir = path.resolve(args.dataDir || path.join(base, 'data'));
   const outDir = path.resolve(args.outDir || path.join(base, 'out'));
@@ -224,7 +216,6 @@ async function main() {
       AVATOOL_DATA_DIR: dataDir,
       AVATOOL_UI_PROBE: outDir,
       AVATOOL_KEEP_SESSION: 'false',
-      AVATOOL_EDITION: args.owner ? 'owner' : '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -251,7 +242,7 @@ async function main() {
     process.exit(1);
   }
 
-  const summary = summarizeReport(reportPath, { owner: args.owner });
+  const summary = summarizeReport(reportPath);
   fs.writeFileSync(path.join(outDir, 'ui_probe_summary.json'), JSON.stringify({
     ok: summary.ok,
     exitCode,

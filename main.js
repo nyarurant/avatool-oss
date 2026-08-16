@@ -1,7 +1,6 @@
-﻿const { app, BrowserWindow, ipcMain, shell, session, Notification, nativeImage, dialog } = require('electron');
+﻿const { app, BrowserWindow, ipcMain, shell, session, Notification, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { safeStorage } = require('electron');
 const os = require('os');
 const crypto = require('crypto');
 const zlib = require('zlib');
@@ -39,7 +38,7 @@ const { createSchedulerService } = require('./lib/scheduler_service');
 const { createMcpControlServer } = require('./lib/mcp_control_server');
 const { createMcpToolService } = require('./lib/mcp_tool_service');
 const { createAgentIntegrationService } = require('./lib/agent_integration_service');
-const { detectAppEdition, OWNER_EDITION } = require('./lib/app_edition');
+const { detectAppEdition } = require('./lib/app_edition');
 const { toFiniteNumber, normalizeHour, normalizeRetryAttempts, normalizeRetryBaseDelayMs, normalizeZipMaxEntryBytes, sanitizePathSegment, safeResolveUnder, dedupeDownloadLinks: dedupeDownloadLinksUtil, isWithinHourWindow, getCpuCount, resolveAppDataRoot: utilsResolveAppDataRoot } = require('./lib/utils');
 const {
   createClientAndCookies,
@@ -90,13 +89,6 @@ let rendererReady = false;
 let rendererFatalState = null;
 const LEGACY_APP_ROOT = __dirname;
 const APP_EDITION = detectAppEdition({ fs, path, env: process.env, resourcesPath: process.resourcesPath || LEGACY_APP_ROOT });
-const IS_OWNER_EDITION = APP_EDITION === OWNER_EDITION;
-const STANDARD_AVATOOL_DATA_ROOT = path.join(app.getPath('appData'), 'avatool', 'data');
-if (IS_OWNER_EDITION && !String(process.env.AVATOOL_DATA_DIR || '').trim()) {
-  const ownerUserData = String(process.env.AVATOOL_OWNER_USER_DATA || '').trim()
-    || path.join(app.getPath('appData'), 'avatool-owner');
-  app.setPath('userData', path.resolve(ownerUserData));
-}
 const APP_DATA_ROOT = utilsResolveAppDataRoot({ app, legacyAppRoot: LEGACY_APP_ROOT });
 const agentIntegrationService = createAgentIntegrationService({
   fs,
@@ -366,22 +358,18 @@ function emitAppUpdateStatus(payload = {}) {
 }
 
 function setupAppUpdater() {
-  if (IS_OWNER_EDITION) return;
   appUpdater.setupAppUpdater();
 }
 
 async function checkForAppUpdate(manual = false) {
-  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.checkForAppUpdate(manual);
 }
 
 async function startAppUpdateDownload() {
-  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.startAppUpdateDownload();
 }
 
 async function installAppUpdateNow() {
-  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.installAppUpdateNow();
 }
 function ensureAppDataRootExists() {
@@ -915,31 +903,6 @@ loadOperationLogs();
 loadSettingsProfiles();
 ensureRuntimeDirs();
 
-let ownerVaultService = null;
-let scheduleOwnerVaultBackup = () => {};
-let getOwnerStandardDataStatus = () => ({ available: false, sourcePath: '' });
-let importStandardDataToOwner = () => ({ ok: false, error: 'owner_edition_required' });
-if (IS_OWNER_EDITION) {
-  const ownerRuntime = require('./owner/main_extensions').createOwnerRuntime({
-    fs,
-    path,
-    axios,
-    safeStorage,
-    appDataRoot: APP_DATA_ROOT,
-    standardDataRoot: STANDARD_AVATOOL_DATA_ROOT,
-    getSettings: () => settings,
-    saveSettings: (nextSettings) => saveSettings(nextSettings),
-    defaultSettings: DEFAULT_SETTINGS,
-    getMainWindow: () => mainWindow,
-    appendRuntimeLog: (...args) => appendRuntimeLog(...args),
-    appendOperationLog: (...args) => appendOperationLog(...args),
-  });
-  ownerVaultService = ownerRuntime.ownerVaultService;
-  scheduleOwnerVaultBackup = ownerRuntime.scheduleOwnerVaultBackup;
-  getOwnerStandardDataStatus = ownerRuntime.getOwnerStandardDataStatus;
-  importStandardDataToOwner = ownerRuntime.importStandardDataToOwner;
-}
-
 let queueSender = null;
 
 function buildItemDir(itemId, title) {
@@ -1107,7 +1070,6 @@ const queueMgr = createDownloadQueue({
   pendingZipOversizeConfirms,
   markItemUpdatedInMeta,
   runAvatarEnrichAfterDownload,
-  onQueueSettled: scheduleOwnerVaultBackup,
   BOOTH_LOGIN_PARTITION,
   session,
   runWithBoothCookieLoginFallback,
@@ -2371,9 +2333,6 @@ registerIpcHandlers({
   agentIntegrationService,
   demoRecordingService,
   appEdition: APP_EDITION,
-  ownerVaultService,
-  getOwnerStandardDataStatus,
-  importStandardDataToOwner,
   metaMgr: {
     applyVersionTrackingKeepingManual,
     ensureMetaWithVersionTracking,
@@ -2421,7 +2380,6 @@ registerIpcHandlers({
   },
   app,
   shell,
-  dialog,
   BrowserWindow,
   session,
   getMainWindow: () => mainWindow,
