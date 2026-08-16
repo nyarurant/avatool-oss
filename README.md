@@ -88,30 +88,38 @@ Archive extraction
 
 ### Download → Unity import
 
+BOOTH で購入したアイテムをダウンロードし、展開された `.unitypackage` を Unity プロジェクトへインポートするまでの一連の流れです。
+
 <p align="center">
   <img src="assets/demo/avatool-demo.gif" width="820" alt="Download to Unity import demo" />
 </p>
 
-### Library / filtering / project workflow
+### その他の機能デモ
+
+よく使う 4 つの機能を、それぞれ短い GIF で紹介します。
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <strong>Library sync</strong><br><br>
-      <img src="assets/demo/avatool-demo-library-sync.gif" width="100%" alt="Avatool library sync demo" />
+      <strong>ライブラリ同期・更新確認</strong><br>
+      新しく購入したアイテムの検出と、既存アイテムの更新チェックをまとめて実行します。<br><br>
+      <img src="assets/demo/avatool-demo-library-sync.gif" width="100%" alt="Avatool library sync and update check demo" />
     </td>
     <td width="50%" valign="top">
-      <strong>Avatar filter</strong><br><br>
+      <strong>アバターフィルター</strong><br>
+      対応アバターでライブラリを絞り込み、そのアバター向けのアイテムだけを表示します。<br><br>
       <img src="assets/demo/avatool-demo-avatar-filter.gif" width="100%" alt="Avatool avatar filter demo" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <strong>Batch import</strong><br><br>
+      <strong>一括インポート</strong><br>
+      ダウンロード済みの複数アイテムを選択し、まとめて Unity へインポートします。<br><br>
       <img src="assets/demo/avatool-demo-batch-import.gif" width="100%" alt="Avatool batch import demo" />
     </td>
     <td width="50%" valign="top">
-      <strong>Project items</strong><br><br>
+      <strong>プロジェクト内検索</strong><br>
+      選択した Unity プロジェクトに、ライブラリ内のどのアイテムが既にインポート済みかを照合します。<br><br>
       <img src="assets/demo/avatool-demo-project-items.gif" width="100%" alt="Avatool project items demo" />
     </td>
   </tr>
