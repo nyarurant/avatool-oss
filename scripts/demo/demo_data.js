@@ -4,11 +4,55 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-// unitypackage files are gzip-compressed tar archives; the reconcile worker
-// (lib/unity_reconcile_worker.js) gunzips them for real, so a plain-text
-// placeholder fails with "incorrect header check". A gzipped, all-zero
-// "tar" (i.e. no entries) parses cleanly as an empty package instead.
-const FAKE_UNITYPACKAGE_BYTES = zlib.gzipSync(Buffer.alloc(1024));
+// unitypackage files are gzip-compressed tar archives. An all-zero
+// placeholder tar (no entries) is enough for demos that only need a
+// downloaded-looking file on disk, but unity_reconcile_worker.js's
+// extractPathnamesNative() reads real tar headers looking for entries named
+// "<guid>/pathname" whose content is the asset's "Assets/..." path (the
+// actual unitypackage-internal layout Unity itself produces) — an all-zero
+// placeholder has none of these, so reconcile can never find a match
+// against it. Fine for demos that don't run reconcile, but meaningless for
+// the one that does (a "0/1 matched" result demonstrates nothing). This
+// builds a minimal-but-real tar containing just the "pathname" entries (no
+// actual asset/meta payload — reconcile never reads those) so a real
+// project directory containing files at the same paths produces a genuine,
+// positive match.
+function buildTarHeader(entryName, size) {
+  const header = Buffer.alloc(512, 0);
+  header.write(entryName, 0, 100, 'utf8');
+  header.write('0000644\0', 100, 8, 'ascii');
+  header.write('0000000\0', 108, 8, 'ascii');
+  header.write('0000000\0', 116, 8, 'ascii');
+  header.write(`${size.toString(8).padStart(11, '0')}\0`, 124, 12, 'ascii');
+  header.write('00000000000\0', 136, 12, 'ascii');
+  header.write('        ', 148, 8, 'ascii'); // checksum field, spaces during computation
+  header[156] = 0x30; // typeflag '0' = regular file
+  header.write('ustar\0', 257, 6, 'ascii');
+  header.write('00', 263, 2, 'ascii');
+  let sum = 0;
+  for (let i = 0; i < 512; i += 1) sum += header[i];
+  header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 8, 'ascii');
+  return header;
+}
+
+function buildFakeUnityPackageWithPaths(assetPathnames) {
+  const blocks = [];
+  assetPathnames.forEach((pathname, index) => {
+    const guid = `demofakeguid${String(index).padStart(19, '0')}`.slice(0, 32);
+    const content = Buffer.from(pathname, 'utf8');
+    blocks.push(buildTarHeader(`${guid}/pathname`, content.length), content);
+    const pad = (512 - (content.length % 512)) % 512;
+    if (pad) blocks.push(Buffer.alloc(pad, 0));
+  });
+  blocks.push(Buffer.alloc(1024, 0)); // two zero blocks = tar end-of-archive marker
+  return zlib.gzipSync(Buffer.concat(blocks));
+}
+
+// The two asset paths the "Nix" package (see hasRealDownloadedFiles below)
+// claims to contain. scripts/demo/demo_project_items.js writes real files at
+// these exact same relative paths into the fake Unity project directory so
+// the reconcile demo shows a genuine, positive match instead of "0/1".
+const HERO_PACKAGE_ASSET_PATHS = ['Assets/Nix/Nix.prefab', 'Assets/Nix/Textures/Nix_albedo.png'];
 
 // The library grid uses real items the user actually owns on BOOTH (real
 // names/authors/categories/thumbnails), picked and approved by the user —
@@ -184,8 +228,14 @@ function createDemoData(dataDir) {
   fs.writeFileSync(path.join(extractedRoot, safeName, 'Prefabs', 'Avatar.prefab'), 'demo prefab placeholder\n', 'utf8');
   fs.writeFileSync(path.join(extractedRoot, safeName, 'Textures', 'body_albedo.png'), 'demo texture placeholder\n', 'utf8');
   // collect-unitypackages (used by the project-items reconcile demo) only
-  // scans inside __extracted/, matching how real BOOTH archives unpack.
-  fs.writeFileSync(path.join(extractedRoot, safeName, `${safeName}.unitypackage`), FAKE_UNITYPACKAGE_BYTES);
+  // scans inside __extracted/, matching how real BOOTH archives unpack. This
+  // package has real (if minimal) tar entries — see
+  // buildFakeUnityPackageWithPaths() above — so the reconcile demo can find
+  // a genuine match against a project containing the same asset paths.
+  fs.writeFileSync(
+    path.join(extractedRoot, safeName, `${safeName}.unitypackage`),
+    buildFakeUnityPackageWithPaths(HERO_PACKAGE_ASSET_PATHS),
+  );
   fs.writeFileSync(path.join(extractedRoot, '__extracted.flag'), 'ok', 'utf8');
 
   fs.writeFileSync(path.join(dataDir, 'librarymeta.json'), JSON.stringify(items, null, 2), 'utf8');
@@ -232,5 +282,5 @@ function createDemoData(dataDir) {
 }
 
 module.exports = {
-  createDemoData, buildDemoLibrary, REAL_DEMO_ITEMS, SYNC_NEW_ITEM,
+  createDemoData, buildDemoLibrary, REAL_DEMO_ITEMS, SYNC_NEW_ITEM, HERO_PACKAGE_ASSET_PATHS,
 };
