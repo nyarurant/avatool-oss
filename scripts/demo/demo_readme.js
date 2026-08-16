@@ -11,7 +11,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
@@ -180,7 +179,12 @@ async function waitForPort(port, timeoutMs) {
 }
 
 async function main() {
-  const base = path.join(os.tmpdir(), `avatool-demo-${Date.now().toString(36)}`);
+  // Deliberately NOT under os.tmpdir() (%TEMP%): that resolves under the
+  // real Windows profile (C:\Users\<real-username>\...), and several demo
+  // screens display full paths (import modal package path, project path).
+  // Keep everything under the repo instead so no real username ever appears
+  // in a captured frame.
+  const base = path.join(ROOT, '.demo-tmp', `run-${Date.now().toString(36)}`);
   const dataDir = path.join(base, 'data');
   const framesDir = path.join(base, 'frames');
   fs.mkdirSync(dataDir, { recursive: true });

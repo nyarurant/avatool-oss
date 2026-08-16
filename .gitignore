@@ -2,6 +2,7 @@ node_modules/
 release/
 release-owner*/
 .electron-dist-manual/
+.demo-tmp/
 .data/
 backups/
 tmp/
