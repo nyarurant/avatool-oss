@@ -388,6 +388,27 @@ describe('ensureClientReady', () => {
 });
 
 describe('processQueue post-download stability', () => {
+  test('successful queue completion schedules the Owner Vault hook once', async () => {
+    const onQueueSettled = jest.fn();
+    const deps = makeDeps({
+      getBoothClient: jest.fn().mockReturnValue({ get: jest.fn() }),
+      getBoothCookies: jest.fn().mockReturnValue([]),
+      downloadItemFiles: jest.fn().mockResolvedValue(undefined),
+      onQueueSettled,
+    });
+    const q = createDownloadQueue(deps);
+    q.getQueueState().queued.push({
+      itemId: 'vault-1',
+      title: 'Vault Item',
+      attempt: 1,
+      asset: { itemId: 'vault-1', title: 'Vault Item', files: [], analyzeAfterDownload: false },
+    });
+
+    await q.processQueue();
+
+    expect(onQueueSettled).toHaveBeenCalledTimes(1);
+  });
+
   test('meta update errors after a completed download do not mark the item failed', async () => {
     const deps = makeDeps({
       getBoothClient: jest.fn().mockReturnValue({ get: jest.fn() }),

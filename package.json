@@ -1,24 +1,30 @@
 {
   "name": "avatool",
-  "version": "1.0.425",
+  "version": "1.0.427",
   "description": "",
   "main": "main.js",
   "scripts": {
     "build:css": "tailwindcss -i ./assets/styles/tailwind.input.css -o ./assets/styles/tailwind.generated.css --minify",
     "start": "electron .",
+    "start:owner": "node owner-build/start-owner.js",
     "start:debug-d": "node scripts/debug-data-reset.js && electron .",
     "start:debug-d:keep-cookie": "node scripts/debug-data-reset.js --keep-cookie && electron .",
     "start:rebuild": "npm run build:css && electron .",
     "debug-d": "node scripts/debug-data-reset.js",
     "debug-d:keep-cookie": "node scripts/debug-data-reset.js --keep-cookie",
     "debug:unity": "node scripts/debug-import.js",
+    "mcp:start": "node mcp/server.js",
     "pack": "electron-builder --dir",
     "dist:win": "electron-builder --win nsis",
+    "dist:owner": "electron-builder --config owner-build/electron-builder.owner.js --win nsis",
+    "owner-vault:server": "node owner-server/server.js",
     "release:upload": "node scripts/build-and-upload-avatool.js",
     "release:upload:no-build": "node scripts/build-and-upload-avatool.js --no-build",
     "test": "node scripts/smoke_test.js",
     "test:ui-probe": "node scripts/ui_probe.js",
+    "test:ui-probe:owner": "node scripts/ui_probe.js --owner",
     "test:unit": "jest",
+    "mcp:bridge": "electron . --mcp-only",
     "test:unit:watch": "jest --watch",
     "test:unit:coverage": "jest --coverage",
     "lint": "eslint ."
@@ -37,8 +43,8 @@
   "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "electron": "^43.1.0",
-    "electron-builder": "^26.8.1",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.6.0",
     "express": "^5.2.1",
     "form-data": "^4.0.4",
@@ -47,12 +53,18 @@
     "tailwindcss": "^3.4.17"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "7zip-bin": "^5.2.0",
     "axios": "^1.13.5",
-    "cheerio": "^1.1.2",
-    "electron-updater": "^6.3.9",
+    "cheerio": "^1.2.0",
+    "electron-updater": "^6.8.9",
     "iconv-lite": "^0.7.1",
-    "yauzl": "^3.2.0"
+    "yauzl": "^3.2.0",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "js-yaml": "4.3.1",
+    "undici": "7.29.0"
   },
   "build": {
     "appId": "xyz.necco.avatool",
@@ -64,6 +76,11 @@
     "files": [
       "**/*",
       "!release/**",
+      "!release-owner/**",
+      "!lib/owner_vault/**",
+      "!owner/**",
+      "!owner-build/**",
+      "!owner-server/**",
       "!.claude/**",
       "!.data/**",
       "!tmp/**",

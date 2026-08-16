@@ -207,7 +207,6 @@ const {
   requireRendererFactory,
   callRendererModule,
   getRendererModuleErrorMessage,
-  recordRendererModuleFailure,
   safeCreateRendererModule,
   safeBindRendererModule,
   renderRendererDegradedBanner,
@@ -301,6 +300,8 @@ const domRefs = {
   settingUnityProjects: document.getElementById('setting-unity-projects'),
   settingSafeMode: document.getElementById('setting-safe-mode'),
   settingHealthCheckOnStartup: document.getElementById('setting-health-check-on-startup'),
+  settingLaunchAtLogin: document.getElementById('setting-launch-at-login'),
+  settingAppUpdateAutoCheckEnabled: document.getElementById('setting-app-update-auto-check-enabled'),
   settingDebugLogEnabled: document.getElementById('setting-debug-log-enabled'),
   settingExperimentalModelPreview: document.getElementById('setting-experimental-model-preview'),
   settingAppVersion: document.getElementById('setting-app-version'),
@@ -1194,8 +1195,9 @@ function createAssetListRow(asset) {
   openBtn.textContent = 'Folder';
 
   const statusEl = document.createElement('span');
-  statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded ? 'text-emerald-300' : 'text-gray-500')}`;
-  statusEl.textContent = asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL');
+  const freeAccessEnded = asset.freeAccessState === 'ended';
+  statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded && !freeAccessEnded ? 'text-emerald-300' : 'text-gray-500')}`;
+  statusEl.textContent = freeAccessEnded ? 'DL済み・配布終了' : (asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL'));
 
   if (isWishlistOnlyRow) {
     const priceChip = createWishlistPriceChip(asset, true);
@@ -2109,10 +2111,13 @@ function wireRendererModules() {
   }
 
   const modelPreviewUi = safeCreateRendererModule('modelPreview', () => createRenderModelPreview({
+    state,
     boothAPI: window.boothAPI,
     esc,
     showTransientMessage,
     logger: window.logger,
+    openItemPickerModal: autoBootstrapUi?.openRuleItemPickerModal,
+    closeItemPickerModal: autoBootstrapUi?.closeRuleItemPickerModal,
   }));
   let openModelPreview = null;
   let closeModelPreview = null;
@@ -2289,6 +2294,22 @@ function wireRendererModules() {
 // ========== Initialization ==========
 
 window.addEventListener('DOMContentLoaded', async () => {
+  await safeRunRendererStartupStep('ownerVaultUi', async () => {
+    // Standard builds never ship owner/render_owner_vault.js (excluded from
+    // package.json build.files), so this script is only injected after the
+    // main process confirms the running edition is 'owner'.
+    const edition = await window.boothAPI?.getAppEdition?.();
+    if (!(edition?.owner === true || edition?.edition === 'owner')) return;
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = './owner/render_owner_vault.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('failed to load owner/render_owner_vault.js'));
+      document.head.appendChild(script);
+    });
+    const ownerVaultUi = window.AvatoolOwnerVaultUI?.createOwnerVaultUI?.(window.boothAPI);
+    if (ownerVaultUi) await ownerVaultUi.init();
+  });
   await safeRunRendererStartupStep('wireRendererModules', async () => {
     wireRendererModules();
   });
@@ -2336,13 +2357,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     await safeRunRendererStartupStep('runLibrarySyncOnStartup', async () => {
       await runLibrarySync(true);
     });
-  }
-  if (localStorage.getItem('autoCheckUpdates') === '1') {
-    setTimeout(() => {
-      Promise.resolve(checkForUpdates({ manual: false })).catch((error) => {
-        recordRendererModuleFailure('startup', 'autoCheckUpdates', error);
-      });
-    }, 3000);
   }
   renderRendererDegradedBanner();
   window.boothAPI?.notifyRendererReady?.();

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Avatool MCP"
+  short_description: "Search and operate the local Avatool library safely."
+  default_prompt: "Use $avatool-mcp to inspect my Avatool library and safely carry out the requested action."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "avatool"
+      description: "Local Avatool MCP server"
+      transport: "stdio"

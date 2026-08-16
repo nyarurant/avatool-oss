@@ -38,6 +38,8 @@ const DEFAULT_SETTINGS = {
   unityProjects: [],
   safeMode: false,
   healthCheckOnStartup: true,
+  launchAtLogin: false,
+  appUpdateAutoCheckEnabled: true,
   debugLogEnabled: false,
   downloadSchedulerEnabled: false,
   downloadSchedulerStartHour: 1,
@@ -306,6 +308,16 @@ describe('normalizeSettingsInPlace', () => {
     expect(disabled.debugLogEnabled).toBe(false);
   });
 
+  test('自動起動と自動更新確認を boolean として正規化する', () => {
+    const result = sm.normalizeSettingsInPlace({
+      ...DEFAULT_SETTINGS,
+      launchAtLogin: '1',
+      appUpdateAutoCheckEnabled: false,
+    });
+    expect(result.launchAtLogin).toBe(true);
+    expect(result.appUpdateAutoCheckEnabled).toBe(false);
+  });
+
   test('renderMode は instant / progressive のみ受け入れる', () => {
     const s1 = sm.normalizeSettingsInPlace({ ...DEFAULT_SETTINGS, renderMode: 'instant' });
     expect(s1.renderMode).toBe('instant');
@@ -356,5 +368,33 @@ describe('saveSettings', () => {
     errorSpy.mockRestore();
     expect(sm.getSettings().concurrency).toBe(DEFAULT_SETTINGS.concurrency);
     expect(deps.onAfterSave).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveSettingsProfiles', () => {
+  test('一時ファイルを書いてから置換する', () => {
+    const deps = makeDeps();
+    const sm = createSettingsManager(deps);
+    sm.setSettingsProfiles({ default: { concurrency: 2 } });
+    expect(sm.saveSettingsProfiles()).toEqual({ ok: true });
+    expect(deps.fs.writeFileSync).toHaveBeenCalledWith(
+      'C:/test/settings-profiles.json.tmp',
+      expect.stringContaining('"default"'),
+      'utf8'
+    );
+    expect(deps.fs.renameSync).toHaveBeenCalledWith(
+      'C:/test/settings-profiles.json.tmp',
+      'C:/test/settings-profiles.json'
+    );
+  });
+
+  test('書き込み失敗を呼び出し側へ返す', () => {
+    const deps = makeDeps();
+    deps.fs.writeFileSync.mockImplementation(() => { throw new Error('disk full'); });
+    const sm = createSettingsManager(deps);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => sm.saveSettingsProfiles()).toThrow('disk full');
+    errorSpy.mockRestore();
+    expect(deps.fs.renameSync).not.toHaveBeenCalled();
   });
 });

@@ -334,6 +334,7 @@
     .settings-tab:hover { color: #d4d4d8; background: rgba(255,255,255,.06); }
     .settings-tab.active { color: #e4e4e7; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.22); }
     .settings-tab.active::before { content: ""; position: absolute; left: 5px; top: 7px; bottom: 7px; width: 2px; border-radius: 999px; background: #60a5fa; }
+    .settings-tab.hidden { display: none; }
     .settings-panel { display: block; }
     .settings-panel.hidden { display: none; }
     .settings-modal-shell { width: 100%; max-width: 900px; height: min(720px, calc(100vh - 4rem)); }
@@ -1023,6 +1024,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"/></svg>
               ショートカット
             </button>
+            <button class="settings-tab" data-tab="agent-integration">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M8 12h8M12 8v8"/></svg>
+              AI連携
+            </button>
             <button class="settings-tab" data-tab="profiles">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               プロファイル
@@ -1146,6 +1151,26 @@
               </div>
               <div class="setting-row">
                 <div>
+                  <span class="text-[13px] text-zinc-200">Windowsログイン時に起動</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">Windowsへのログイン時にAvatoolを自動起動する</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-launch-at-login" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <span class="text-[13px] text-zinc-200">アプリ更新を自動確認</span>
+                  <p class="text-[11px] text-zinc-500 mt-0.5">起動時と30分ごとに更新を確認する。ダウンロードとインストールは確認後に実行します。</p>
+                </div>
+                <label class="switch">
+                  <input id="setting-app-update-auto-check-enabled" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div>
                   <span class="text-[13px] text-zinc-200">デバッグログ</span>
                   <p class="text-[11px] text-zinc-500 mt-0.5">対応アバター解析のスコア内訳などをログへ出力する</p>
                 </div>
@@ -1256,6 +1281,50 @@
             <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-white/5">
               <span class="text-[10px] text-zinc-500">記法: /, g, Shift+D, Ctrl+F, Ctrl+,</span>
               <button id="setting-shortcuts-reset" class="btn-action">初期値に戻す</button>
+            </div>
+          </div>
+
+          <!-- Agent integration -->
+          <div class="settings-panel hidden" data-panel="agent-integration">
+            <div class="settings-panel-header">
+              <div class="text-[13px] font-semibold text-zinc-100">AIエージェント連携</div>
+              <div class="text-[11px] text-zinc-500 mt-0.5">Codex / Claude Code の CLI、Skill、MCP 接続状態を確認・セットアップ</div>
+            </div>
+            <div class="space-y-4">
+              <div class="rounded-lg border border-white/10 bg-black/20 overflow-hidden">
+                <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
+                  <div>
+                    <div class="text-[12px] font-semibold text-zinc-100">Codex</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">Codex CLI と Avatool MCP の連携</div>
+                  </div>
+                  <span id="agent-integration-codex-overall" class="text-[10px] text-zinc-500">未確認</span>
+                </div>
+                <div class="grid grid-cols-3 gap-px bg-white/5">
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">CLI</div><div id="agent-integration-codex-cli" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">Skill</div><div id="agent-integration-codex-skill" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">MCP</div><div id="agent-integration-codex-mcp" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                </div>
+              </div>
+              <div class="rounded-lg border border-white/10 bg-black/20 overflow-hidden">
+                <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
+                  <div>
+                    <div class="text-[12px] font-semibold text-zinc-100">Claude Code</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">Claude Code CLI と Avatool MCP の連携</div>
+                  </div>
+                  <span id="agent-integration-claude-overall" class="text-[10px] text-zinc-500">未確認</span>
+                </div>
+                <div class="grid grid-cols-3 gap-px bg-white/5">
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">CLI</div><div id="agent-integration-claude-cli" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">Skill</div><div id="agent-integration-claude-skill" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                  <div class="bg-black/20 px-3 py-2"><div class="text-[9px] text-zinc-500">MCP</div><div id="agent-integration-claude-mcp" class="text-[11px] text-zinc-300 mt-0.5">未確認</div></div>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
+                <button id="agent-integration-check" class="btn-action">状態を確認</button>
+                <button id="agent-integration-setup" class="btn-action btn-primary">自動セットアップ</button>
+                <span id="agent-integration-status" class="min-h-[18px] text-[10px] text-zinc-500" aria-live="polite">状態を確認してください。</span>
+              </div>
+              <p class="text-[10px] text-zinc-500">自動セットアップはこのボタンを押した場合にのみ実行します。完了後は Codex / Claude Code の再起動が必要な場合があります。</p>
             </div>
           </div>
 
@@ -1402,8 +1471,8 @@
     <div class="rule-item-picker-shell modal-card">
       <div class="rule-item-picker-header">
         <div>
-          <div class="text-sm font-semibold text-zinc-100">Select Item</div>
-          <div class="text-[11px] text-zinc-500 mt-0.5">インポート対象のアイテムを選択</div>
+          <div id="rule-item-picker-title" class="text-sm font-semibold text-zinc-100">Select Item</div>
+          <div id="rule-item-picker-subtitle" class="text-[11px] text-zinc-500 mt-0.5">インポート対象のアイテムを選択</div>
         </div>
         <button id="rule-item-picker-close" class="icon-btn" title="閉じる">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1476,6 +1545,7 @@
   <script src="./renderer/render_auto_bootstrap.js"></script>
   <script src="./renderer/render_import_modal.js"></script>
   <script src="./renderer/render_preview_modal.js"></script>
+  <script src="./renderer/render_vrc_expression_runtime.js"></script>
   <script src="./renderer/render_model_preview.js"></script>
   <script src="./renderer/render_library_actions.js"></script>
   <script src="./renderer/render_asset_list.js"></script>

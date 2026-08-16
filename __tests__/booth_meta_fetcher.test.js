@@ -10,6 +10,7 @@ const {
   extractDownloadableIdFromHref,
   extractBoothItemId,
   extractFreeDownloadLinksFromItemJson,
+  classifyFreeDownloadAccess,
   _test: {
     getPrimaryCategory,
     normalizeAvatarLookupToken,
@@ -764,6 +765,33 @@ describe('dedupeMetaItemsByItemId', () => {
     expect(dedupeMetaItemsByItemId(items)[0].isGift).toBe(true);
   });
 
+  test('履歴から復旧したリンクがあっても明示的な無料配布終了状態を維持する', () => {
+    const result = dedupeMetaItemsByItemId([{
+      itemId: '100',
+      isFreeDownload: true,
+      freeAccessState: 'ended',
+      downloadLinks: [{ downloadableId: '1', fileName: 'old.zip' }],
+    }]);
+    expect(result[0].freeAccessState).toBe('ended');
+  });
+
+  test('重複行のunknownで確定済みの無料配布終了状態を上書きしない', () => {
+    const result = dedupeMetaItemsByItemId([
+      { itemId: '100', isFreeDownload: true, freeAccessState: 'ended', downloadLinks: [] },
+      { itemId: '100', isFreeDownload: true, freeAccessState: 'unknown', downloadLinks: [] },
+    ]);
+    expect(result[0].freeAccessState).toBe('ended');
+  });
+
+  test('購入ライブラリ側にDLリンクがあれば無料履歴側が終了でも利用可能を優先する', () => {
+    const result = dedupeMetaItemsByItemId([
+      { itemId: '100', isFreeDownload: false, downloadLinks: [{ downloadableId: '2', fileName: 'paid.zip' }] },
+      { itemId: '100', isFreeDownload: true, freeAccessState: 'ended', downloadLinks: [] },
+    ]);
+    expect(result[0].freeAccessState).toBe('available');
+    expect(result[0].downloadLinks).toHaveLength(1);
+  });
+
   test('skips rows without a valid itemId', () => {
     const items = [
       { itemId: '', itemName: 'no id' },
@@ -985,6 +1013,27 @@ describe('extractFreeDownloadLinksFromItemJson', () => {
 
     const result = extractFreeDownloadLinksFromItemJson(payload);
     expect(result).toEqual([{ downloadableId: '8921603', fileName: 'pinaponnte_ring.zip', variationName: 'Free variation' }]);
+  });
+});
+
+describe('classifyFreeDownloadAccess', () => {
+  test('有料variationだけになった商品は無料配布終了と判定する', () => {
+    expect(classifyFreeDownloadAccess({ variations: [{ price: 500 }] }, [])).toBe('ended');
+  });
+
+  test('無料variationが残っていればリンク未取得でも利用可能と判定する', () => {
+    expect(classifyFreeDownloadAccess({ variations: [{ price: '0円' }] }, [])).toBe('available');
+  });
+
+  test('価格情報を取得できない場合は配布終了と断定しない', () => {
+    expect(classifyFreeDownloadAccess({}, [])).toBe('unknown');
+  });
+
+  test('無料リンクを取得済みなら利用可能と判定する', () => {
+    expect(classifyFreeDownloadAccess(
+      { variations: [{ price: 500 }] },
+      [{ downloadableId: '1', fileName: 'free.zip' }],
+    )).toBe('available');
   });
 });
 

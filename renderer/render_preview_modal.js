@@ -139,6 +139,13 @@
         domRefs.modalOpenEntryBtn.disabled = true;
         domRefs.modalOpenEntryBtn.onclick = null;
       }
+      // Buttons here (3D preview / Import into Unity) are rebuilt per-entry in
+      // updateInspector() with itemId/path baked into their click closures. Without
+      // clearing here, switching to a different asset before clicking any file in its
+      // tree leaves the previous asset's buttons live — clicking "Import into Unity"
+      // would then import the wrong item's package.
+      const actionsEl = document.getElementById('modal-file-actions');
+      if (actionsEl) actionsEl.innerHTML = '';
       if (domRefs.importStatusBox) {
         domRefs.importStatusBox.classList.add('hidden');
         domRefs.importStatusBox.textContent = '';
@@ -339,11 +346,14 @@
           img.onerror = () => { thumb.innerHTML = `<span class="text-gray-600">${getIconForFile(entry.name)}</span>`; };
           thumb.appendChild(img);
         } else if (isUnity) {
-          thumb.innerHTML = `<div class="flex flex-col items-center gap-1"><span class="text-blue-400">${String(icons.unity || getIconForFile(entry.name)).replace(/width="24"/g, 'width="32"').replace(/height="24"/g, 'height="32"')}</span><span class="text-[8px] text-blue-300/60 font-mono-custom">.unitypackage</span></div>`;
+          const can3d = Boolean(openModelPreview && state.settings?.experimentalModelPreview);
+          thumb.innerHTML = `<div class="flex flex-col items-center gap-1"><span class="text-blue-400">${String(icons.unity || getIconForFile(entry.name)).replace(/width="24"/g, 'width="32"').replace(/height="24"/g, 'height="32"')}</span><span class="text-[8px] text-blue-300/60 font-mono-custom">.unitypackage</span>${can3d ? '<span class="mt-0.5 rounded border border-amber-400/30 bg-amber-400/10 px-1 py-0.5 text-[8px] font-bold text-amber-300">3D</span>' : ''}</div>`;
         } else {
           let colorClass = 'text-gray-500';
           if (ext === 'blend') colorClass = 'text-orange-400';
-          thumb.innerHTML = `<div class="flex flex-col items-center gap-1"><span class="${colorClass}">${String(getIconForFile(entry.name)).replace(/width="24"/g, 'width="30"').replace(/height="24"/g, 'height="30"')}</span>${ext ? `<span class="text-[8px] text-zinc-600 font-mono-custom uppercase">.${ext}</span>` : ''}</div>`;
+          if (ext === 'fbx' || ext === 'obj') colorClass = 'text-emerald-400';
+          const can3dMesh = (ext === 'fbx' || ext === 'obj') && openModelPreview && state.settings?.experimentalModelPreview;
+          thumb.innerHTML = `<div class="flex flex-col items-center gap-1"><span class="${colorClass}">${String(getIconForFile(entry.name)).replace(/width="24"/g, 'width="30"').replace(/height="24"/g, 'height="30"')}</span>${ext ? `<span class="text-[8px] text-zinc-600 font-mono-custom uppercase">.${ext}</span>` : ''}${can3dMesh ? '<span class="mt-0.5 rounded border border-amber-400/30 bg-amber-400/10 px-1 py-0.5 text-[8px] font-bold text-amber-300">3D</span>' : ''}</div>`;
         }
 
         const label = document.createElement('div');
@@ -365,6 +375,21 @@
           if (domRefs.currentFolderLabel) domRefs.currentFolderLabel.textContent = state.modal.currentPath || 'ルート';
           if (state.modal.treeRoot) renderFolderContents(state.modal.treeRoot.byPath, state.modal.currentPath);
           updateTreeSelection(entry.relPath);
+        };
+        // Double-click .unitypackage / .fbx / .obj → open 3D preview when enabled
+        // (FBX inside a package is NOT listed as a separate file — select the .unitypackage itself.)
+        tile.ondblclick = (ev) => {
+          if (entry.kind === 'dir') return;
+          const e = getFileExt(entry.name).slice(1);
+          const isPkg = e === 'unitypackage';
+          const isMesh = e === 'fbx' || e === 'obj';
+          if (!(isPkg || isMesh)) return;
+          if (!openModelPreview || !state.settings?.experimentalModelPreview) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          const asset = state.modal.selectedAsset;
+          if (!asset) return;
+          openModelPreview(asset, entry).catch((error) => logger?.error?.(error));
         };
         enableKeyboardActivation(tile, () => tile.click());
         domRefs.modalFileGrid.appendChild(tile);
@@ -441,7 +466,17 @@
         domRefs.modalPreviewFilename.title = name;
       }
       if (domRefs.modalPreviewInfo) {
-        domRefs.modalPreviewInfo.textContent = isDir ? 'フォルダ' : ext ? `.${ext} ファイル` : 'ファイル';
+        if (isDir) {
+          domRefs.modalPreviewInfo.textContent = 'フォルダ';
+        } else if (isUnityPackage) {
+          domRefs.modalPreviewInfo.textContent = state.settings?.experimentalModelPreview
+            ? '.unitypackage（3Dプレビューは Prefab 基準。中の FBX は一覧に出ません）'
+            : '.unitypackage ファイル';
+        } else if (ext) {
+          domRefs.modalPreviewInfo.textContent = `.${ext} ファイル`;
+        } else {
+          domRefs.modalPreviewInfo.textContent = 'ファイル';
+        }
       }
 
       // ファイル操作エリア
@@ -453,10 +488,27 @@
         domRefs.modalOpenEntryBtn.onclick = null;
       }
 
+      // 3D preview first for mesh packages (FBX lives inside .unitypackage — select the package, not an inner path)
+      const isMeshCandidate = !isDir && (isUnityPackage || ext === 'fbx' || ext === 'obj');
+      if (isMeshCandidate && actionsEl && openModelPreview && state.settings?.experimentalModelPreview) {
+        const btn = document.createElement('button');
+        btn.id = 'btn-open-model-preview';
+        btn.className = 'w-full px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-100 text-[11px] font-medium rounded-lg transition flex flex-col items-center justify-center gap-0.5';
+        if (isUnityPackage) {
+          btn.innerHTML = '<span class="flex items-center gap-1.5"><span>3Dプレビュー</span><span class="rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">beta</span></span><span class="text-[9px] text-amber-200/70 font-normal">Prefab 基準でメッシュ＋マテリアルを表示</span>';
+        } else {
+          btn.innerHTML = '<span class="flex items-center gap-1.5"><span>3Dプレビュー</span><span class="rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">beta</span></span>';
+        }
+        btn.addEventListener('click', () => {
+          openModelPreview(selectedAsset, entry).catch((error) => logger?.error?.(error));
+        });
+        actionsEl.appendChild(btn);
+      }
+
       if (isUnityPackage && actionsEl) {
         const btn = document.createElement('button');
         btn.id = 'btn-open-import-modal';
-        btn.className = 'w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium rounded-lg transition';
+        btn.className = 'w-full mt-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium rounded-lg transition';
         btn.textContent = 'Import into Unity';
         btn.addEventListener('click', () => {
           openImportModal(entry.fullPath, {
@@ -468,18 +520,6 @@
               meta: { topFolders: [], tokens: [] },
             },
           }).catch((error) => logger?.error?.(error));
-        });
-        actionsEl.appendChild(btn);
-      }
-
-      const isMeshCandidate = !isDir && (isUnityPackage || ext === 'fbx' || ext === 'obj');
-      if (isMeshCandidate && actionsEl && openModelPreview && state.settings?.experimentalModelPreview) {
-        const btn = document.createElement('button');
-        btn.id = 'btn-open-model-preview';
-        btn.className = 'w-full mt-2 px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-zinc-100 text-[11px] font-medium rounded-lg transition flex items-center justify-center gap-1.5';
-        btn.innerHTML = '<span>3Dプレビュー</span><span class="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">beta</span>';
-        btn.addEventListener('click', () => {
-          openModelPreview(selectedAsset, entry).catch((error) => logger?.error?.(error));
         });
         actionsEl.appendChild(btn);
       }

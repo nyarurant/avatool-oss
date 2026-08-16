@@ -36,8 +36,8 @@ describe('ensureWindowsStartupRegistration', () => {
     expect(args.app.setLoginItemSettings).not.toHaveBeenCalled();
   });
 
-  test('win32 + isPackaged=true で setLoginItemSettings を呼ぶ', () => {
-    const args = makeArgs();
+  test('enabled=true で自動起動を有効化する', () => {
+    const args = makeArgs({ enabled: true });
     ensureWindowsStartupRegistration(args);
     expect(args.app.setLoginItemSettings).toHaveBeenCalledWith({
       openAtLogin: true,
@@ -46,8 +46,19 @@ describe('ensureWindowsStartupRegistration', () => {
     });
   });
 
+  test('enabled=false で自動起動を無効化する', () => {
+    const args = makeArgs({ enabled: false });
+    args.app.getLoginItemSettings = jest.fn().mockReturnValue({ openAtLogin: false });
+    ensureWindowsStartupRegistration(args);
+    expect(args.app.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: false,
+      path: '/app/avatool.exe',
+      args: [],
+    });
+  });
+
   test('getLoginItemSettings が openAtLogin=false を返すと warn を出す', () => {
-    const args = makeArgs();
+    const args = makeArgs({ enabled: true });
     args.app.getLoginItemSettings = jest.fn().mockReturnValue({ openAtLogin: false });
     ensureWindowsStartupRegistration(args);
     expect(args.logger.warn).toHaveBeenCalledWith(expect.stringContaining('startup registration'));

@@ -96,14 +96,23 @@ module.exports = [
     },
   },
   {
-    files: ['renderer/**/*.js', 'render.js', 'preload.js', 'log_preload.js'],
+    files: ['renderer/**/*.js', 'render.js', 'preload.js', 'log_preload.js', 'owner/render_owner_vault.js'],
     languageOptions: {
       globals: { ...browserGlobals, require: 'readonly' },
     },
   },
   {
-    // three.jsをESモジュールとして読み込むブリッジのみ、import/export構文が必要。
-    files: ['renderer/render_model_preview_three.js'],
+    // three.jsをESモジュールとして読み込むブリッジ・その依存先のみ、import/export構文が必要。
+    files: [
+      'renderer/render_model_preview_three.js',
+      'renderer/render_model_preview_liltoon.js',
+      'renderer/render_physbone_runtime.js',
+      'renderer/render_constraint_runtime.js',
+      'renderer/render_contact_runtime.js',
+      'renderer/render_avatar_face_runtime.js',
+      'renderer/render_humanoid_runtime.js',
+      'renderer/render_unity_animation_runtime.js',
+    ],
     languageOptions: {
       sourceType: 'module',
     },

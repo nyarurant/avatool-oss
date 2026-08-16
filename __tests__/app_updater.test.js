@@ -16,6 +16,21 @@ function makeUpdater(overrides = {}) {
   return createAppUpdater(deps);
 }
 
+describe('setupAppUpdater', () => {
+  test('自動確認時に更新ファイルを勝手にダウンロードしない', () => {
+    const electronAutoUpdater = {
+      on: jest.fn(),
+      autoDownload: true,
+      autoInstallOnAppQuit: true,
+      disableDifferentialDownload: false,
+    };
+    const updater = makeUpdater({ electronAutoUpdater });
+    updater.setupAppUpdater();
+    expect(electronAutoUpdater.autoDownload).toBe(false);
+    expect(electronAutoUpdater.autoInstallOnAppQuit).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // parseSemverInfo (_test)
 // ---------------------------------------------------------------------------

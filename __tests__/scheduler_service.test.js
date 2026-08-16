@@ -20,6 +20,7 @@ function makeDeps(settingsOverrides = {}) {
     downloadSchedulerProfile: 'light',
     downloadSchedulerStartHour: 0,
     downloadSchedulerEndHour: 23,
+    appUpdateAutoCheckEnabled: true,
     concurrency: 4,
     ...settingsOverrides,
   };
@@ -38,7 +39,7 @@ function makeDeps(settingsOverrides = {}) {
     processQueue: jest.fn(),
     dedupeMetaItemsByItemId: jest.fn((x) => x),
     queueMgr: { getQueueState: () => queueState },
-    checkForAppUpdate: jest.fn(),
+    checkForAppUpdate: jest.fn().mockResolvedValue({ ok: true }),
     getElectronAutoUpdater: jest.fn().mockReturnValue(null),
     APP_UPDATE_AUTO_CHECK_INTERVAL_MIN: 60,
   };
@@ -81,5 +82,29 @@ describe('maybeRunScheduledDownloads concurrency handling', () => {
     const { maybeRunScheduledDownloads } = createSchedulerService(deps);
     await maybeRunScheduledDownloads();
     expect(deps.queueMgr.getQueueState().concurrency).toBe(4);
+  });
+});
+
+describe('app update auto check timer', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test('設定が無効ならタイマーを開始しない', () => {
+    const deps = makeDeps({ appUpdateAutoCheckEnabled: false });
+    deps.getElectronAutoUpdater.mockReturnValue({});
+    const service = createSchedulerService(deps);
+    service.startAppUpdateAutoCheckTimer();
+    jest.advanceTimersByTime(60 * 60 * 1000);
+    expect(deps.checkForAppUpdate).not.toHaveBeenCalled();
+  });
+
+  test('設定が有効なら指定間隔で確認する', () => {
+    const deps = makeDeps({ appUpdateAutoCheckEnabled: true });
+    deps.getElectronAutoUpdater.mockReturnValue({});
+    const service = createSchedulerService(deps);
+    service.startAppUpdateAutoCheckTimer();
+    jest.advanceTimersByTime(60 * 60 * 1000);
+    expect(deps.checkForAppUpdate).toHaveBeenCalledWith(false);
+    service.stopAll();
   });
 });

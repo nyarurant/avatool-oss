@@ -27,6 +27,7 @@
     const stopShortcutCapture = deps?.stopShortcutCapture;
     const closeTopOverlayOrMode = deps?.closeTopOverlayOrMode;
     let ipcEventsBound = false;
+    let agentIntegrationStatusRefreshInFlight = false;
 
     if (
       !state ||
@@ -133,6 +134,157 @@
       renderProjectItemsProjectSelect(rows);
     }
 
+    const agentIntegrationDefs = [
+      { key: 'codex', aliases: ['codex'], label: 'Codex' },
+      { key: 'claude', aliases: ['claude', 'claudeCode', 'claude_code'], label: 'Claude Code' },
+    ];
+    const agentIntegrationParts = [
+      { key: 'cli', label: 'CLI' },
+      { key: 'skill', label: 'Skill' },
+      { key: 'mcp', label: 'MCP' },
+    ];
+
+    function getAgentIntegrationElement(name) {
+      return document.getElementById(`agent-integration-${name}`);
+    }
+
+    function normalizeAgentIntegrationPart(value) {
+      if (value === true || value?.ok === true || value?.available === true || value?.installed === true || value?.configured === true || value?.enabled === true) {
+        return { state: 'ok', label: value?.label || value?.message || '利用可能' };
+      }
+      if (value === false || value?.ok === false || value?.available === false || value?.installed === false || value?.configured === false || value?.enabled === false) {
+        return { state: 'error', label: value?.message || value?.error || '未設定' };
+      }
+      if (typeof value === 'string' && value) {
+        const normalized = value.toLowerCase();
+        if (['ok', 'ready', 'available', 'installed', 'configured', 'enabled', 'current', 'unchanged', 'updated'].includes(normalized)) return { state: 'ok', label: '利用可能' };
+        if (normalized === 'unmanaged_current') return { state: 'ok', label: '導入済み（手動管理）' };
+        if (normalized === 'user_owned') return { state: 'unknown', label: '既存Skill（保持）' };
+        if (normalized === 'modified') return { state: 'unknown', label: '手編集済み（保持）' };
+        if (normalized === 'outdated') return { state: 'error', label: '更新が必要' };
+        if (normalized === 'mismatch') return { state: 'error', label: '登録内容が不一致' };
+        if (normalized === 'skipped') return { state: 'error', label: '未セットアップ' };
+        if (['missing', 'not_found', 'unavailable', 'invalid', 'disabled', 'error', 'failed'].includes(normalized)) return { state: 'error', label: '未設定' };
+        return { state: 'unknown', label: value };
+      }
+      if (value && typeof value === 'object' && (typeof value.status === 'string' || typeof value.state === 'string' || typeof value.action === 'string')) {
+        return normalizeAgentIntegrationPart(value.status || value.state || value.action);
+      }
+      return { state: 'unknown', label: '未確認' };
+    }
+
+    function setAgentIntegrationText(element, part) {
+      if (!element) return;
+      element.textContent = part.label;
+      element.className = `text-[11px] mt-0.5 ${part.state === 'ok' ? 'text-emerald-300' : (part.state === 'error' ? 'text-rose-300' : 'text-zinc-300')}`;
+    }
+
+    function agentIntegrationPayloadFor(status, def) {
+      const agents = status?.agents || status?.integrations || status?.status || status || {};
+      if (Array.isArray(agents)) {
+        return agents.find((agent) => def.aliases.includes(String(agent?.key || agent?.id || agent?.name || '').trim())) || {};
+      }
+      return def.aliases.map((key) => agents?.[key]).find((value) => value && typeof value === 'object') || {};
+    }
+
+    function renderAgentIntegrationStatus(status, { message = '', tone = 'info' } = {}) {
+      for (const def of agentIntegrationDefs) {
+        const agent = agentIntegrationPayloadFor(status, def);
+        const parts = agentIntegrationParts.map((part) => ({
+          ...part,
+          value: agent?.[part.key] ?? agent?.[`${part.key}Status`] ?? agent?.[`${part.key}State`] ?? agent?.[`${part.key}Installed`] ?? agent?.[`${part.key}Configured`],
+        }));
+        const normalizedParts = parts.map((part) => normalizeAgentIntegrationPart(part.value));
+        parts.forEach((part, index) => setAgentIntegrationText(getAgentIntegrationElement(`${def.key}-${part.key}`), normalizedParts[index]));
+        const overall = normalizedParts.every((part) => part.state === 'ok')
+          ? { state: 'ok', label: '準備完了' }
+          : (normalizedParts.some((part) => part.state === 'error') ? { state: 'error', label: '要セットアップ' } : { state: 'unknown', label: '未確認' });
+        const overallElement = getAgentIntegrationElement(`${def.key}-overall`);
+        if (overallElement) {
+          overallElement.textContent = overall.label;
+          overallElement.className = `text-[10px] ${overall.state === 'ok' ? 'text-emerald-300' : (overall.state === 'error' ? 'text-amber-300' : 'text-zinc-500')}`;
+        }
+      }
+      const statusElement = getAgentIntegrationElement('status');
+      if (statusElement && message) {
+        statusElement.textContent = message;
+        statusElement.className = `min-h-[18px] text-[10px] ${tone === 'error' ? 'text-rose-300' : (tone === 'partial' ? 'text-amber-300' : 'text-zinc-400')}`;
+      }
+    }
+
+    function setAgentIntegrationBusy(busy, action = '') {
+      const checkButton = getAgentIntegrationElement('check');
+      const setupButton = getAgentIntegrationElement('setup');
+      if (checkButton) {
+        checkButton.disabled = busy;
+        checkButton.textContent = busy && action === 'check' ? '確認中...' : '状態を確認';
+      }
+      if (setupButton) {
+        setupButton.disabled = busy;
+        setupButton.textContent = busy && action === 'setup' ? 'セットアップ中...' : '自動セットアップ';
+      }
+    }
+
+    function agentIntegrationRestartRequired(result) {
+      return result?.restartRequired === true || result?.requiresRestart === true || result?.restart?.required === true;
+    }
+
+    async function refreshAgentIntegrationStatus({ announce = false } = {}) {
+      if (agentIntegrationStatusRefreshInFlight) return null;
+      if (typeof boothAPI.getAgentIntegrationStatus !== 'function') {
+        renderAgentIntegrationStatus({}, { message: 'このバージョンではAIエージェント連携の状態確認を利用できません。', tone: 'error' });
+        return null;
+      }
+      agentIntegrationStatusRefreshInFlight = true;
+      setAgentIntegrationBusy(true, 'check');
+      try {
+        const result = await boothAPI.getAgentIntegrationStatus();
+        if (result?.ok === false || result?.error) {
+          renderAgentIntegrationStatus(result, { message: `状態確認に失敗: ${result?.error || 'unknown'}`, tone: 'error' });
+          return result;
+        }
+        renderAgentIntegrationStatus(result, { message: announce ? 'AIエージェント連携の状態を更新しました。' : '現在の連携状態です。', tone: 'info' });
+        return result;
+      } catch (error) {
+        renderAgentIntegrationStatus({}, { message: `状態確認に失敗: ${error?.message || String(error)}`, tone: 'error' });
+        return null;
+      } finally {
+        agentIntegrationStatusRefreshInFlight = false;
+        setAgentIntegrationBusy(false);
+      }
+    }
+
+    async function setupAgentIntegration() {
+      if (typeof boothAPI.setupAgentIntegration !== 'function') {
+        renderAgentIntegrationStatus({}, { message: 'このバージョンでは自動セットアップを利用できません。', tone: 'error' });
+        return;
+      }
+      setAgentIntegrationBusy(true, 'setup');
+      renderAgentIntegrationStatus({}, { message: 'AIエージェント連携をセットアップしています...', tone: 'info' });
+      try {
+        const result = await boothAPI.setupAgentIntegration();
+        const restartMessage = agentIntegrationRestartRequired(result) ? ' Codex / Claude Code を再起動してください。' : '';
+        if (result?.partial === true) {
+          renderAgentIntegrationStatus(result, {
+            message: `一部のセットアップに失敗: ${result?.error || '詳細は各項目を確認してください。'}${restartMessage}`,
+            tone: 'partial',
+          });
+        } else if (result?.ok === false || result?.error) {
+          renderAgentIntegrationStatus(result, {
+            message: `セットアップに失敗: ${result?.error || 'unknown'}${restartMessage}`,
+            tone: 'error',
+          });
+        } else {
+          renderAgentIntegrationStatus(result, { message: `セットアップが完了しました。${restartMessage}`, tone: 'info' });
+        }
+        await refreshAgentIntegrationStatus();
+      } catch (error) {
+        renderAgentIntegrationStatus({}, { message: `セットアップに失敗: ${error?.message || String(error)}`, tone: 'error' });
+      } finally {
+        setAgentIntegrationBusy(false);
+      }
+    }
+
     async function openSettingsModal() {
       if (!domRefs.settingsModal || !boothAPI.getSettings) return;
       const settings = await boothAPI.getSettings();
@@ -147,6 +299,8 @@
       if (domRefs.settingUnityPath) domRefs.settingUnityPath.value = state.settings.unityEditorPath || '';
       if (domRefs.settingSafeMode) domRefs.settingSafeMode.checked = Boolean(state.settings.safeMode);
       if (domRefs.settingHealthCheckOnStartup) domRefs.settingHealthCheckOnStartup.checked = state.settings.healthCheckOnStartup !== false;
+      if (domRefs.settingLaunchAtLogin) domRefs.settingLaunchAtLogin.checked = Boolean(state.settings.launchAtLogin);
+      if (domRefs.settingAppUpdateAutoCheckEnabled) domRefs.settingAppUpdateAutoCheckEnabled.checked = state.settings.appUpdateAutoCheckEnabled !== false;
       if (domRefs.settingDebugLogEnabled) domRefs.settingDebugLogEnabled.checked = Boolean(state.settings.debugLogEnabled);
       if (domRefs.settingExperimentalModelPreview) domRefs.settingExperimentalModelPreview.checked = Boolean(state.settings.experimentalModelPreview);
       if (domRefs.settingRenderMode) domRefs.settingRenderMode.value = getRenderModeSetting();
@@ -182,6 +336,11 @@
 
       domRefs.settingsModal.classList.remove('hidden');
       domRefs.settingsModal.classList.add('flex');
+      // CLI discovery can take seconds on some machines. Keep it observable,
+      // but never delay the settings modal or leave a rejected Promise behind.
+      void refreshAgentIntegrationStatus().catch((error) => {
+        console.warn('[renderer] agent integration status refresh failed:', error);
+      });
     }
 
     async function loadVCCProjectsIntoSettings() {
@@ -233,6 +392,8 @@
         unityProjects: state.settings?.unityProjects || [],
         safeMode: Boolean(domRefs.settingSafeMode?.checked),
         healthCheckOnStartup: Boolean(domRefs.settingHealthCheckOnStartup?.checked),
+        launchAtLogin: Boolean(domRefs.settingLaunchAtLogin?.checked),
+        appUpdateAutoCheckEnabled: Boolean(domRefs.settingAppUpdateAutoCheckEnabled?.checked),
         debugLogEnabled: Boolean(domRefs.settingDebugLogEnabled?.checked),
         experimentalModelPreview: Boolean(domRefs.settingExperimentalModelPreview?.checked),
         keyboardShortcutsEnabled: Boolean(domRefs.settingKeyboardShortcutsEnabled?.checked),
@@ -407,6 +568,12 @@
           domRefs.settingAppUpdateCheck.disabled = false;
         }
       });
+      getAgentIntegrationElement('check')?.addEventListener('click', async () => {
+        await refreshAgentIntegrationStatus({ announce: true });
+      });
+      getAgentIntegrationElement('setup')?.addEventListener('click', async () => {
+        await setupAgentIntegration();
+      });
       domRefs.settingsSaveProfile?.addEventListener('click', async () => {
         const name = String(domRefs.settingsProfileName?.value || '').trim();
         if (!name) {
@@ -533,6 +700,8 @@
       refreshOperationLogsFromMain,
       refreshSettingsProfilesList,
       renderUnityProjectsList,
+      refreshAgentIntegrationStatus,
+      setupAgentIntegration,
       openSettingsModal,
       loadVCCProjectsIntoSettings,
       saveSettingsFromModal,

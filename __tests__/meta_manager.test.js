@@ -447,6 +447,51 @@ describe('applyVersionTrackingKeepingManual', () => {
     expect(upgraded.isRemoved).toBe(false);
     expect(upgraded.removedAt).toBeUndefined();
   });
+
+  test('無料取得後に有料化してもファイル削除の更新として扱わない', () => {
+    const initial = applyVersionTrackingKeepingManual([], [makeItem('777', ['free.zip'], {
+      isFreeDownload: true,
+      freeAccessState: 'available',
+    })], AT).items;
+    const result = applyVersionTrackingKeepingManual(initial, [makeItem('777', [], {
+      isFreeDownload: true,
+      freeAccessState: 'ended',
+    })], '2026-02-01T00:00:00.000Z');
+
+    expect(result.updates).toEqual([]);
+    expect(result.items[0].downloadLinks).toHaveLength(1);
+    expect(result.items[0].freeAccessState).toBe('ended');
+    expect(result.items[0].hasUpdate).toBe(false);
+  });
+
+  test('既に空リンクで汚染された無料配布終了メタを履歴から復旧する', () => {
+    const original = applyVersionTrackingKeepingManual([], [makeItem('888', ['old.zip'], {
+      isFreeDownload: true,
+      freeAccessState: 'available',
+    })], AT).items[0];
+    const emptyHash = generateFilesHash([]);
+    const emptyStableHash = generateFilesStableHash([]);
+    const poisoned = {
+      ...original,
+      downloadLinks: [],
+      hasUpdate: true,
+      latestVersion: { detectedAt: AT, filesHash: emptyHash, filesHashStable: emptyStableHash },
+      versionHistory: [
+        ...original.versionHistory,
+        { detectedAt: AT, downloadLinks: [], filesHash: emptyHash, filesHashStable: emptyStableHash },
+      ],
+    };
+    const result = applyVersionTrackingKeepingManual([poisoned], [makeItem('888', [], {
+      isFreeDownload: true,
+      freeAccessState: 'ended',
+    })], '2026-02-01T00:00:00.000Z');
+
+    expect(result.updates).toEqual([]);
+    expect(result.items[0].downloadLinks).toEqual(original.downloadLinks);
+    expect(result.items[0].versionHistory.every((entry) => entry.downloadLinks.length > 0)).toBe(true);
+    expect(result.items[0].latestVersion.filesHashStable).toBe(generateFilesStableHash(original.downloadLinks));
+    expect(result.items[0].hasUpdate).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -741,6 +786,32 @@ describe('toAssetMap', () => {
     expect(map['1'].wishlistAddedAt).toBeNull();
     expect(map['1'].isRemoved).toBe(false);
     expect(map['1'].removedAt).toBeNull();
+  });
+
+  test('無料配布終了かつ未DLのアイテムは通常一覧へ公開しない', () => {
+    const deps = makeDeps();
+    deps.fs.existsSync.mockReturnValue(false);
+    const { toAssetMap } = createMetaManager(deps);
+    const map = toAssetMap([makeItem('ended', ['old.zip'], {
+      isFreeDownload: true,
+      freeAccessState: 'ended',
+    })]);
+    expect(map.ended).toBeUndefined();
+  });
+
+  test('無料配布終了でもDL済みなら残し、再DLと更新を無効化する', () => {
+    const deps = makeDeps();
+    deps.fs.existsSync.mockImplementation((p) => String(p || '').includes('__extracted.flag'));
+    const { toAssetMap } = createMetaManager(deps);
+    const map = toAssetMap([makeItem('ended', ['old.zip'], {
+      isFreeDownload: true,
+      freeAccessState: 'ended',
+      hasUpdate: true,
+    })]);
+    expect(map.ended.downloaded).toBe(true);
+    expect(map.ended.files).toEqual([]);
+    expect(map.ended.hasUpdate).toBe(false);
+    expect(map.ended.freeAccessState).toBe('ended');
   });
 
   test('writeMetaFile 後の fast map は古い metaCache ではなく書き込み内容を返す', () => {

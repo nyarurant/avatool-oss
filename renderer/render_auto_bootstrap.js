@@ -40,7 +40,14 @@
       modal?.classList.remove('flex');
     }
 
-    function openRuleItemPickerModal({ items = [], selectedKeys = [], onApply } = {}) {
+    function openRuleItemPickerModal({
+      items = [],
+      selectedKeys = [],
+      onApply,
+      singleSelect = false,
+      title,
+      subtitle,
+    } = {}) {
       const modal = document.getElementById('rule-item-picker-modal');
       const grid = document.getElementById('rule-item-picker-grid');
       const searchInput = document.getElementById('rule-item-picker-search');
@@ -48,9 +55,18 @@
       const countEl = document.getElementById('rule-item-picker-count');
       const applyBtn = document.getElementById('rule-item-picker-apply');
       const cancelBtn = document.getElementById('rule-item-picker-cancel');
+      const titleEl = document.getElementById('rule-item-picker-title');
+      const subtitleEl = document.getElementById('rule-item-picker-subtitle');
       if (!modal || !grid) return;
       if (searchInput) searchInput.value = '';
       if (sortSelect) sortSelect.value = 'selected';
+      if (titleEl) titleEl.textContent = title || 'Select Item';
+      if (subtitleEl) subtitleEl.textContent = subtitle || 'インポート対象のアイテムを選択';
+      // Single-select mode (e.g. picking one outfit to wear) has no multi-pick footer —
+      // clicking an item immediately applies and closes. `.btn-action`/etc. set `display`
+      // directly, which beats the `.hidden` utility class on specificity, so set it inline.
+      if (countEl) countEl.style.display = singleSelect ? 'none' : '';
+      if (applyBtn) applyBtn.style.display = singleSelect ? 'none' : '';
       const selectedSet = new Set((Array.isArray(selectedKeys) ? selectedKeys : []).map((key) => String(key || '').trim()).filter(Boolean));
 
       const getItemName = (item) => String(item?.itemTitle || item?.label || item?.key || '');
@@ -114,6 +130,11 @@
           opt.appendChild(name);
           opt.addEventListener('click', () => {
             if (!key) return;
+            if (singleSelect) {
+              if (typeof onApply === 'function') onApply([item], [key]);
+              closeRuleItemPickerModal();
+              return;
+            }
             if (selectedSet.has(key)) selectedSet.delete(key);
             else selectedSet.add(key);
             opt.classList.toggle('selected', selectedSet.has(key));
@@ -706,6 +727,8 @@
       renderProjectImportRulesEditor,
       collectProjectImportRulesFromEditor,
       saveAutoBootstrapFromModal,
+      openRuleItemPickerModal,
+      closeRuleItemPickerModal,
     };
   }
 

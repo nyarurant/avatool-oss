@@ -613,8 +613,9 @@
         openBtn = document.createElement('button');
         openBtn.className = 'open-btn text-[9px] px-2 py-1 text-gray-400 hover:text-white border border-gray-800 rounded';
         openBtn.textContent = 'Folder';
-        statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded ? 'text-emerald-300' : 'text-gray-500')}`;
-        statusEl.textContent = asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL');
+        const freeAccessEnded = asset.freeAccessState === 'ended';
+        statusEl.className = `text-[9px] ml-1 ${asset.hasUpdate ? 'text-amber-300' : (asset.downloaded && !freeAccessEnded ? 'text-emerald-300' : 'text-gray-500')}`;
+        statusEl.textContent = freeAccessEnded ? 'DL済み・配布終了' : (asset.hasUpdate ? '更新あり' : (asset.downloaded ? 'DL済み' : '未DL'));
         actionTop.appendChild(openBtn);
         actionTop.appendChild(statusEl);
       } else {
@@ -1291,7 +1292,9 @@
         if (entry.filesBar) entry.filesBar.style.width = '0%';
         if (entry.filesLabel) entry.filesLabel.textContent = '';
         if (entry.statusEl) {
-          entry.statusEl.textContent = asset?.hasUpdate ? '更新あり' : (asset?.downloaded ? 'DL済み' : '未DL');
+          entry.statusEl.textContent = asset?.freeAccessState === 'ended'
+            ? 'DL済み・配布終了'
+            : (asset?.hasUpdate ? '更新あり' : (asset?.downloaded ? 'DL済み' : '未DL'));
         }
         if (entry.downloadBtn) {
           entry.downloadBtn.disabled = false;

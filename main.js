@@ -1,6 +1,7 @@
 ﻿const { app, BrowserWindow, ipcMain, shell, session, Notification, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { safeStorage } = require('electron');
 const os = require('os');
 const crypto = require('crypto');
 const zlib = require('zlib');
@@ -34,6 +35,10 @@ const { createStorageManager } = require('./lib/storage_manager');
 const { createHealthCheckService } = require('./lib/health_check_service');
 const { createWindowManager } = require('./lib/window_manager');
 const { createSchedulerService } = require('./lib/scheduler_service');
+const { createMcpControlServer } = require('./lib/mcp_control_server');
+const { createMcpToolService } = require('./lib/mcp_tool_service');
+const { createAgentIntegrationService } = require('./lib/agent_integration_service');
+const { detectAppEdition, OWNER_EDITION } = require('./lib/app_edition');
 const { toFiniteNumber, normalizeHour, normalizeRetryAttempts, normalizeRetryBaseDelayMs, normalizeZipMaxEntryBytes, sanitizePathSegment, safeResolveUnder, dedupeDownloadLinks: dedupeDownloadLinksUtil, isWithinHourWindow, getCpuCount, resolveAppDataRoot: utilsResolveAppDataRoot } = require('./lib/utils');
 const {
   createClientAndCookies,
@@ -83,7 +88,23 @@ let rendererBootSessionId = 0;
 let rendererReady = false;
 let rendererFatalState = null;
 const LEGACY_APP_ROOT = __dirname;
+const APP_EDITION = detectAppEdition({ fs, path, env: process.env, resourcesPath: process.resourcesPath || LEGACY_APP_ROOT });
+const IS_OWNER_EDITION = APP_EDITION === OWNER_EDITION;
+const STANDARD_AVATOOL_DATA_ROOT = path.join(app.getPath('appData'), 'avatool', 'data');
+if (IS_OWNER_EDITION && !String(process.env.AVATOOL_DATA_DIR || '').trim()) {
+  const ownerUserData = String(process.env.AVATOOL_OWNER_USER_DATA || '').trim()
+    || path.join(app.getPath('appData'), 'avatool-owner');
+  app.setPath('userData', path.resolve(ownerUserData));
+}
 const APP_DATA_ROOT = utilsResolveAppDataRoot({ app, legacyAppRoot: LEGACY_APP_ROOT });
+const agentIntegrationService = createAgentIntegrationService({
+  fs,
+  path,
+  processObj: process,
+  env: process.env,
+  appRoot: LEGACY_APP_ROOT,
+  executablePath: process.execPath,
+});
 process.env.AVATOOL_DATA_DIR = APP_DATA_ROOT;
 setDownloaderDataRoot(APP_DATA_ROOT);
 setMetaFetcherDataRoot(APP_DATA_ROOT);
@@ -194,6 +215,8 @@ const DEFAULT_SETTINGS = {
   unityProjects: [],
   safeMode: false,
   healthCheckOnStartup: true,
+  launchAtLogin: false,
+  appUpdateAutoCheckEnabled: true,
   debugLogEnabled: false,
   downloadSchedulerEnabled: false,
   downloadSchedulerStartHour: 1,
@@ -342,18 +365,22 @@ function emitAppUpdateStatus(payload = {}) {
 }
 
 function setupAppUpdater() {
+  if (IS_OWNER_EDITION) return;
   appUpdater.setupAppUpdater();
 }
 
 async function checkForAppUpdate(manual = false) {
+  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.checkForAppUpdate(manual);
 }
 
 async function startAppUpdateDownload() {
+  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.startAppUpdateDownload();
 }
 
 async function installAppUpdateNow() {
+  if (IS_OWNER_EDITION) return { ok: false, disabled: true, error: 'owner_update_channel_not_configured' };
   return await appUpdater.installAppUpdateNow();
 }
 function ensureAppDataRootExists() {
@@ -887,6 +914,31 @@ loadOperationLogs();
 loadSettingsProfiles();
 ensureRuntimeDirs();
 
+let ownerVaultService = null;
+let scheduleOwnerVaultBackup = () => {};
+let getOwnerStandardDataStatus = () => ({ available: false, sourcePath: '' });
+let importStandardDataToOwner = () => ({ ok: false, error: 'owner_edition_required' });
+if (IS_OWNER_EDITION) {
+  const ownerRuntime = require('./owner/main_extensions').createOwnerRuntime({
+    fs,
+    path,
+    axios,
+    safeStorage,
+    appDataRoot: APP_DATA_ROOT,
+    standardDataRoot: STANDARD_AVATOOL_DATA_ROOT,
+    getSettings: () => settings,
+    saveSettings: (nextSettings) => saveSettings(nextSettings),
+    defaultSettings: DEFAULT_SETTINGS,
+    getMainWindow: () => mainWindow,
+    appendRuntimeLog: (...args) => appendRuntimeLog(...args),
+    appendOperationLog: (...args) => appendOperationLog(...args),
+  });
+  ownerVaultService = ownerRuntime.ownerVaultService;
+  scheduleOwnerVaultBackup = ownerRuntime.scheduleOwnerVaultBackup;
+  getOwnerStandardDataStatus = ownerRuntime.getOwnerStandardDataStatus;
+  importStandardDataToOwner = ownerRuntime.importStandardDataToOwner;
+}
+
 let queueSender = null;
 
 function buildItemDir(itemId, title) {
@@ -1054,6 +1106,7 @@ const queueMgr = createDownloadQueue({
   pendingZipOversizeConfirms,
   markItemUpdatedInMeta,
   runAvatarEnrichAfterDownload,
+  onQueueSettled: scheduleOwnerVaultBackup,
   BOOTH_LOGIN_PARTITION,
   session,
   runWithBoothCookieLoginFallback,
@@ -1250,8 +1303,8 @@ async function writeSimpleFolderIcons(projectPath, payload = {}) {
   return await unityMgr.writeSimpleFolderIcons(projectPath, payload);
 }
 
-async function analyzeImportToolDependencies(payload = {}) {
-  return await unityMgr.analyzeImportToolDependencies(payload);
+async function analyzeImportToolDependencies(projectPath, packages = []) {
+  return await unityMgr.analyzeImportToolDependencies(projectPath, packages);
 }
 
 async function installImportToolDependencies(projectPath, report = {}) {
@@ -1397,6 +1450,728 @@ function startDownloadScheduler() { schedulerSvc.startDownloadScheduler(); }
 function startAppUpdateAutoCheckTimer() { schedulerSvc.startAppUpdateAutoCheckTimer(); }
 function maybeRunScheduledDownloads() { return schedulerSvc.maybeRunScheduledDownloads(); }
 
+// MCP is intentionally a thin, local-only adapter over the same managers used by the UI.
+// It never receives a renderer confirmation dialog; callers must explicitly choose the
+// requested operation and import mode.
+function mcpAssetRows() {
+  const cache = typeof metaMgr.getMetaCache === 'function' ? metaMgr.getMetaCache() : [];
+  if (Array.isArray(cache) && cache.length) return cache;
+  const fast = typeof metaMgr.getMetaAssetMapFast === 'function' ? metaMgr.getMetaAssetMapFast() : {};
+  return fast && typeof fast === 'object' ? Object.values(fast) : [];
+}
+
+async function mcpSyncLibrary() {
+  return await runWithBoothCookieLoginFallback(async () => metaMgr.refreshMetaAfterLoginDedup(null));
+}
+
+function mcpNormalizeAsset(asset) {
+  const itemId = String(asset?.itemId || '').trim();
+  const title = String(asset?.title || asset?.itemName || asset?.name || '').trim();
+  const links = Array.isArray(asset?.files) && asset.files.length ? asset.files : (Array.isArray(asset?.downloadLinks) ? asset.downloadLinks : []);
+  return { ...asset, itemId, title, files: links };
+}
+
+async function mcpEnqueueDownload(asset) {
+  const normalized = mcpNormalizeAsset(asset);
+  if (!normalized.itemId) return { ok: false, error: 'invalid_item_id' };
+  const diskGuard = queueMgr.checkDiskSpaceGuard();
+  if (!diskGuard?.ok) return { ...diskGuard, queue: getQueueStatus() };
+  const state = queueMgr.getQueueState();
+  const id = String(normalized.itemId);
+  if (state.queued.some((task) => String(task?.itemId) === id) || state.running.has(id)) {
+    return { ok: true, duplicate: true, queue: getQueueStatus() };
+  }
+  state.queued.push({
+    itemId: normalized.itemId,
+    title: normalized.title,
+    attempt: 0,
+    nextRunAt: 0,
+    forceRedownload: Boolean(normalized.forceRedownload),
+    asset: {
+      ...normalized,
+      files: normalized.files,
+      analyzeAfterDownload: normalized.analyzeAfterDownload !== false,
+      forceRedownload: Boolean(normalized.forceRedownload),
+    },
+  });
+  queueMgr.emitQueueStatus(mainWindow?.webContents);
+  if (!state.paused) processQueue(mainWindow?.webContents).catch((error) => console.warn('MCP queue processing failed:', error?.message || error));
+  return { ok: true, duplicate: false, queue: getQueueStatus() };
+}
+
+function mcpRegisteredProject(projectPath) {
+  if (!isRegisteredUnityProject(projectPath)) return false;
+  return true;
+}
+
+async function mcpImportAssetToUnity({ itemId, projectPath, importMode }) {
+  if (!mcpRegisteredProject(projectPath)) return { ok: false, error: 'project_not_registered' };
+  const asset = mcpAssetRows().find((row) => String(row?.itemId || '') === String(itemId));
+  const title = String(asset?.title || asset?.itemName || asset?.name || itemId);
+  const itemDir = buildItemDir(itemId, title);
+  const extracted = path.join(itemDir, '__extracted');
+  if (!fs.existsSync(extracted)) return { ok: false, error: 'extracted_dir_not_found' };
+  let packageRows = listUnityPackagesInDir(extracted).map((packagePath) => ({
+    packagePath,
+    itemId: String(asset?.itemId || itemId),
+    title,
+    previewUrl: String(asset?.localImagePath || asset?.imageUrl || ''),
+  }));
+  if (!packageRows.length) return { ok: false, error: 'no_packages' };
+  const iconInstall = installSimpleFolderIconAsPackage(projectPath);
+  if (!iconInstall?.ok) console.warn('[SimpleFolderIcon] MCP install failed:', iconInstall?.error || iconInstall);
+  packageRows = appendSimpleFolderIconToBatchPackages(packageRows);
+  const validation = validateImportPackages(packageRows);
+  const validRows = Array.isArray(validation) ? validation : (validation?.validPackages || []);
+  if (!validRows.length) return { ok: false, error: 'no_valid_packages' };
+  const importPackagesRaw = await fillPackageMetaByScan(validRows);
+  const planned = planTopFolderRenames(projectPath, importPackagesRaw || validRows) || {};
+  const importPackages = Array.isArray(planned.packages) ? planned.packages : (importPackagesRaw || validRows);
+  const renameEntries = Array.isArray(planned.renameEntries) ? planned.renameEntries : [];
+  const validPaths = importPackages.map((row) => String(row?.packagePath || '').trim()).filter(Boolean);
+  if (!validPaths.length) return { ok: false, error: 'no_valid_packages' };
+
+  const appendHistory = () => unityMgr.appendImportHistory(projectPath, importPackages);
+  const writeIcons = () => writeSimpleFolderIcons(projectPath, importPackages);
+  if (importMode === 'live') {
+    if (!unityMgr.isUnityProjectLocked(projectPath)) return { ok: false, error: 'require_background_when_unity_closed' };
+    const prep = ensureUnityLiveImporterReady(projectPath);
+    if (!prep?.ok) return { ok: false, error: prep?.error || 'prepare_unity_project_failed' };
+    const queued = enqueueUnityLiveImport(projectPath, validPaths, renameEntries);
+    if (queued?.ok) {
+      appendHistory();
+      return { ...queued, mode: 'live_bridge', iconWrite: await writeIcons() };
+    }
+    return queued;
+  }
+
+  const editorCheck = unityMgr.validateUnityEditorPathSetting();
+  if (!editorCheck?.ok) return { ok: false, error: editorCheck?.error || 'unity_editor_not_found' };
+  if (unityMgr.isUnityProjectLocked(projectPath)) {
+    const prep = ensureUnityLiveImporterReady(projectPath);
+    if (!prep?.ok) return { ok: false, error: prep?.error || 'prepare_unity_project_failed' };
+    const queued = enqueueUnityLiveImport(projectPath, validPaths, renameEntries);
+    if (queued?.ok) {
+      appendHistory();
+      return { ...queued, mode: 'live_bridge', iconWrite: await writeIcons() };
+    }
+    return queued;
+  }
+  const batchPrep = ensureUnityBatchImporterReady(projectPath);
+  if (!batchPrep?.ok) return { ok: false, error: batchPrep?.error || 'prepare_unity_project_failed' };
+  const lock = unityMgr.acquireBackgroundImportProjectLock(projectPath);
+  if (!lock?.ok) return { ok: false, error: lock?.error || 'background_import_already_running' };
+  let result;
+  try {
+    result = await unityMgr.runUnityBatchImport(projectPath, validPaths, null, { renameEntries });
+  } finally {
+    unityMgr.releaseBackgroundImportProjectLock(lock.key);
+  }
+  if (result?.ok) {
+    appendHistory();
+    return { ...result, mode: 'background', iconWrite: await writeIcons() };
+  }
+  return result;
+}
+
+// MCP wave 2 adapters. Keep these at the application boundary so the tool
+// dispatcher can remain Electron-free and the existing UI managers stay the
+// single source of truth for state and side effects.
+function mcpResolveAsset(itemId) {
+  const id = String(itemId || '').trim();
+  return mcpAssetRows().find((row) => String(row?.itemId || '').trim() === id) || null;
+}
+
+function mcpAssetTitle(asset, itemId) {
+  return String(asset?.title || asset?.itemName || asset?.name || itemId || '').trim();
+}
+
+function mcpItemDirectory(itemId) {
+  const asset = mcpResolveAsset(itemId);
+  if (!asset) return { asset: null, title: '', itemDir: '' };
+  const id = String(itemId || '').trim();
+  const title = mcpAssetTitle(asset, id);
+  return { asset, title, itemDir: buildItemDir(id, title) };
+}
+
+function mcpGetOperationLogs(max) {
+  const rows = typeof logMgr.getOperationLogs === 'function' ? logMgr.getOperationLogs() : [];
+  return (Array.isArray(rows) ? rows : []).slice(-Math.max(1, Math.min(1000, Number(max) || 50)));
+}
+
+function mcpListItemFiles({ itemId, limit: max = 50 } = {}) {
+  const ref = mcpItemDirectory(itemId);
+  if (!ref.asset) return { ok: false, error: 'item_not_found', files: [] };
+  const extractedRoot = path.join(ref.itemDir, '__extracted');
+  if (!fs.existsSync(extractedRoot)) return { ok: false, error: '__extracted_not_found', files: [] };
+
+  const rowLimit = Math.max(1, Math.min(1000, Number(max) || 50));
+  const files = [];
+  const stack = [{ dir: extractedRoot, base: '', depth: 0 }];
+  let truncated = false;
+  while (stack.length && files.length < rowLimit) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (files.length >= rowLimit) {
+        truncated = true;
+        break;
+      }
+      // Do not follow junctions or symbolic links. In particular, never call
+      // statSync on a symlink because that would resolve it outside the item.
+      if (entry.isSymbolicLink?.()) continue;
+      const relPath = path.join(current.base, entry.name);
+      const fullPath = path.join(current.dir, entry.name);
+      let stat;
+      try {
+        stat = fs.lstatSync(fullPath);
+      } catch {
+        continue;
+      }
+      if (stat.isSymbolicLink()) continue;
+      const common = {
+        name: entry.name,
+        relPath: relPath.replace(/\\/g, '/'),
+        fullPath,
+        size: stat.isFile() ? stat.size : 0,
+        mtime: stat.mtimeMs,
+      };
+      if (stat.isDirectory()) {
+        files.push({ ...common, kind: 'dir' });
+        if (current.depth < MAX_LIST_ITEM_DEPTH) {
+          stack.push({ dir: fullPath, base: relPath, depth: current.depth + 1 });
+        } else {
+          truncated = true;
+        }
+      } else if (stat.isFile()) {
+        files.push({ ...common, kind: 'file' });
+      }
+    }
+  }
+  if (files.length >= rowLimit && stack.length) truncated = true;
+  return { files, truncated, limit: rowLimit };
+}
+
+function mcpListUnityPackages({ itemId } = {}) {
+  const ref = mcpItemDirectory(itemId);
+  if (!ref.asset) return { ok: false, error: 'item_not_found', packages: [] };
+  const extractedRoot = path.join(ref.itemDir, '__extracted');
+  if (!fs.existsSync(extractedRoot)) return { ok: false, error: '__extracted_not_found', packages: [] };
+  return { itemId: String(itemId || '').trim(), title: ref.title, packages: listUnityPackagesInDir(extractedRoot) };
+}
+
+function mcpGetProjectItems({ projectPath } = {}) {
+  const target = normalizeProjectPath(projectPath);
+  if (!target) return { items: [] };
+  const history = loadImportHistory();
+  const items = [];
+  for (const [itemId, rows] of Object.entries(history || {})) {
+    const matched = (Array.isArray(rows) ? rows : [])
+      .filter((row) => normalizeProjectPath(row?.projectPath || '') === target);
+    if (!matched.length) continue;
+    matched.sort((a, b) => new Date(b?.importedAt || 0).getTime() - new Date(a?.importedAt || 0).getTime());
+    const latest = matched[0] || {};
+    items.push({
+      itemId: String(itemId),
+      title: String(latest?.title || ''),
+      count: matched.length,
+      lastImportedAt: latest?.importedAt || '',
+      topFolder: latest?.topFolders?.[0]?.name || '',
+      tokens: Array.isArray(latest?.tokens) ? latest.tokens : [],
+      reconciled: Boolean(latest?.reconciled),
+    });
+  }
+  items.sort((a, b) => new Date(b.lastImportedAt || 0).getTime() - new Date(a.lastImportedAt || 0).getTime());
+  return { projectPath: target, items };
+}
+
+async function mcpSearchBooth(args = {}) {
+  return await searchBoothItems(args);
+}
+
+async function mcpGetBoothItem({ itemId } = {}) {
+  return await fetchBoothItemDetailAuthenticated(itemId);
+}
+
+async function mcpListBootstrapChoices() {
+  const [variants, rules] = await Promise.all([
+    listAutoBootstrapVariantOptions(),
+    listAutoBootstrapRuleChoices(),
+  ]);
+  return { variants, rules };
+}
+
+async function mcpControlDownloadQueue({ action } = {}) {
+  const state = queueMgr.getQueueState();
+  if (action === 'stop') {
+    state.paused = true;
+  } else if (action === 'resume') {
+    state.paused = false;
+  } else if (action === 'retry_failed') {
+    const retryTargets = Array.isArray(state.failed) ? state.failed.splice(0, state.failed.length) : [];
+    for (const failed of retryTargets) {
+      state.queued.push({
+        itemId: failed.itemId,
+        title: failed.title || '',
+        attempt: 0,
+        nextRunAt: 0,
+        asset: failed.asset,
+        source: 'retry-failed',
+      });
+    }
+    state.paused = false;
+  }
+  queueMgr.emitQueueStatus(mainWindow?.webContents);
+  if ((action === 'resume' || action === 'retry_failed') && !state.paused) {
+    processQueue(mainWindow?.webContents).catch((error) => console.warn('MCP queue processing failed:', error?.message || error));
+  }
+  return { ok: true, queue: getQueueStatus() };
+}
+
+async function mcpExtractItem({ itemId, force = false } = {}) {
+  const ref = mcpItemDirectory(itemId);
+  if (!ref.asset) return { ok: false, error: 'item_not_found' };
+  if (!fs.existsSync(ref.itemDir)) return { ok: false, error: 'item_dir_not_found' };
+  const extractedRoot = path.join(ref.itemDir, '__extracted');
+  if (force && fs.existsSync(extractedRoot)) {
+    fs.rmSync(extractedRoot, { recursive: true, force: true });
+  }
+  await extractArchivesInItemDir(ref.itemDir, { itemId: String(itemId || '').trim(), title: ref.title });
+  return { ok: true, itemId: String(itemId || '').trim(), title: ref.title };
+}
+
+async function mcpInstallVpmDependencies({ projectPath, modularAvatar = false, liltoon = false } = {}) {
+  const target = normalizeProjectPath(projectPath);
+  if (!target || !fs.existsSync(target)) return { ok: false, error: 'project_not_found' };
+  if (!isRegisteredUnityProject(target)) return { ok: false, error: 'project_not_registered' };
+  if (!modularAvatar && !liltoon) return { ok: false, error: 'no_dependencies_selected' };
+  const result = { ok: true, projectPath: target };
+  if (modularAvatar) {
+    result.modularAvatar = await ensureModularAvatarDependency(target);
+    if (result.modularAvatar?.ok === false || result.modularAvatar?.error) return { ...result, ok: false, error: result.modularAvatar.error || 'modular_avatar_install_failed' };
+  }
+  if (liltoon) {
+    result.liltoon = await ensureLiltoonDependency(target);
+    if (result.liltoon?.ok === false || result.liltoon?.error) return { ...result, ok: false, error: result.liltoon.error || 'liltoon_install_failed' };
+  }
+  return result;
+}
+
+function mcpRunAutoBootstrap({ projectPath } = {}) {
+  const target = normalizeProjectPath(projectPath);
+  if (!target || !fs.existsSync(target)) return { ok: false, error: 'project_not_found' };
+  if (!isRegisteredUnityProject(target)) return { ok: false, error: 'project_not_registered' };
+  enqueueAutoBootstrap(target, 'mcp');
+  return { ok: true, queued: true, projectPath: target };
+}
+
+// Wave 3 MCP adapters. Package paths are deliberately relative to the
+// selected library item's __extracted directory. Never let an MCP caller turn
+// the package scanner into an arbitrary local-file reader.
+function mcpIsPathUnder(baseDir, targetPath) {
+  const base = path.resolve(baseDir);
+  const target = path.resolve(targetPath);
+  const rel = path.relative(base, target);
+  return Boolean(rel) && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel);
+}
+
+function mcpPackageResultPath(extractedRoot, packagePath) {
+  const rootStat = fs.lstatSync(extractedRoot);
+  if (rootStat.isSymbolicLink()) throw new Error('extracted_root_symlink_not_allowed');
+  const realRoot = fs.realpathSync(extractedRoot);
+  const resolved = path.resolve(packagePath);
+  const stat = fs.lstatSync(resolved);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('package_not_regular_file');
+  const realPackage = fs.realpathSync(resolved);
+  if (!mcpIsPathUnder(realRoot, realPackage)) throw new Error('package_outside_extracted_root');
+  if (!String(realPackage).toLowerCase().endsWith('.unitypackage')) throw new Error('not_unitypackage');
+  return realPackage;
+}
+
+function mcpExtractedUnityPackages({ itemId, packagePath } = {}) {
+  const ref = mcpItemDirectory(itemId);
+  if (!ref.asset) return { ok: false, error: 'item_not_found', packages: [] };
+  const extractedRoot = path.join(ref.itemDir, '__extracted');
+  if (!fs.existsSync(extractedRoot)) return { ok: false, error: '__extracted_not_found', packages: [] };
+
+  try {
+    let packages;
+    if (packagePath !== undefined && packagePath !== null && String(packagePath).trim()) {
+      const rawPath = String(packagePath).trim();
+      const normalizedPath = rawPath.replace(/\\/g, '/');
+      if (path.isAbsolute(rawPath) || /^(?:[A-Za-z]:[\\/]|[\\/]{1,2})/.test(rawPath)) {
+        return { ok: false, error: 'absolute_package_path_not_allowed', packages: [] };
+      }
+      if (normalizedPath.split('/').includes('..')) {
+        return { ok: false, error: 'package_path_traversal_not_allowed', packages: [] };
+      }
+      const candidate = safeResolveUnder(extractedRoot, normalizedPath);
+      packages = [mcpPackageResultPath(extractedRoot, candidate)];
+    } else {
+      packages = listUnityPackagesInDir(extractedRoot)
+        .map((candidate) => {
+          try { return mcpPackageResultPath(extractedRoot, candidate); } catch { return ''; }
+        })
+        .filter(Boolean);
+    }
+    return {
+      ok: true,
+      itemId: String(itemId || '').trim(),
+      title: ref.title,
+      extractedRoot: fs.realpathSync(extractedRoot),
+      packages: Array.from(new Set(packages)),
+    };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error), packages: [] };
+  }
+}
+
+function mcpRelativePackagePath(extractedRoot, packagePath) {
+  return path.relative(extractedRoot, packagePath).replace(/\\/g, '/');
+}
+
+async function mcpGetBoothCart({ shopSubdomain = '' } = {}) {
+  try {
+    return await runWithBoothCookieLoginFallback(async () => {
+      if (typeof fetchBoothCart !== 'function') return { error: 'unavailable' };
+      return await fetchBoothCart(String(shopSubdomain || ''));
+    });
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+function mcpListSettingsProfiles() {
+  const profiles = settingsMgr.getSettingsProfiles();
+  return { ok: true, names: Object.keys(profiles || {}).sort((a, b) => a.localeCompare(b, 'ja')) };
+}
+
+function mcpGetImportHistory({ itemId, limit: max = 100 } = {}) {
+  const rowLimit = Math.max(1, Math.min(1000, Number(max) || 100));
+  const history = loadImportHistory();
+  const requestedItemId = String(itemId || '').trim();
+  if (requestedItemId) {
+    const rows = Array.isArray(history?.[requestedItemId]) ? history[requestedItemId] : [];
+    const sorted = [...rows].sort((a, b) => new Date(b?.importedAt || 0).getTime() - new Date(a?.importedAt || 0).getTime());
+    return { itemId: requestedItemId, history: sorted.slice(0, rowLimit), returned: Math.min(sorted.length, rowLimit), total: sorted.length };
+  }
+  const rows = [];
+  for (const [id, entries] of Object.entries(history || {})) {
+    for (const entry of (Array.isArray(entries) ? entries : [])) rows.push({ itemId: String(id), ...entry });
+  }
+  rows.sort((a, b) => new Date(b?.importedAt || 0).getTime() - new Date(a?.importedAt || 0).getTime());
+  return { history: rows.slice(0, rowLimit), returned: Math.min(rows.length, rowLimit), total: rows.length };
+}
+
+async function mcpScanUnitypackage({ itemId, packagePath } = {}) {
+  const resolved = mcpExtractedUnityPackages({ itemId, packagePath });
+  if (!resolved.ok) return resolved;
+  if (!resolved.packages.length) return { ...resolved, error: 'no_unitypackages' };
+  const candidateTokens = ['modularavatar', 'ndmf', 'liltoon', 'vrcfury', 'avataroptimizer', 'avatar-optimizer', 'poiyomi'];
+  const scan = await runReconcileWorker('scan_batch', {
+    packages: resolved.packages.map((pkgPath) => ({ pkgPath, candidateTokens })),
+  });
+  const resultRows = Array.isArray(scan?.results) ? scan.results : [];
+  const extractedRoot = resolved.extractedRoot;
+  const packages = resolved.packages.map((pkgPath, index) => {
+    const row = resultRows[index] || { ok: false, error: scan?.error || 'scan_failed' };
+    return {
+      packagePath: mcpRelativePackagePath(extractedRoot, pkgPath),
+      ok: row.ok === true,
+      error: row.ok === true ? undefined : (row.error || 'scan_failed'),
+      topFolders: Array.isArray(row.topFolders) ? row.topFolders : [],
+      tokens: Array.isArray(row.tokens) ? row.tokens : [],
+      assetPathCount: Array.isArray(row.assetPaths) ? row.assetPaths.length : 0,
+    };
+  });
+  return { ok: scan?.ok === true, itemId: resolved.itemId, title: resolved.title, packages };
+}
+
+async function mcpAnalyzeVpmDependencies({ projectPath, itemId } = {}) {
+  const target = normalizeProjectPath(projectPath);
+  if (!target || !fs.existsSync(target)) return { ok: false, error: 'project_not_found' };
+  if (!isRegisteredUnityProject(target)) return { ok: false, error: 'project_not_registered' };
+
+  let packageRows = [];
+  let packageInfo = null;
+  const id = String(itemId || '').trim();
+  if (id) {
+    packageInfo = mcpExtractedUnityPackages({ itemId: id });
+    if (!packageInfo.ok) return packageInfo;
+    packageRows = packageInfo.packages.map((packagePath) => ({ packagePath, meta: {} }));
+  }
+  const result = await analyzeImportToolDependencies(target, packageRows);
+  return {
+    ...result,
+    projectPath: target,
+    itemId: id || null,
+    packageCount: packageRows.length,
+  };
+}
+
+function mcpGetRuntimeLogs({ limit: max = 200 } = {}) {
+  const rowLimit = Math.max(1, Math.min(2000, Number(max) || 200));
+  const logs = runtimeLogBuffer.slice(-rowLimit);
+  return { ok: true, logs, returned: logs.length };
+}
+
+async function mcpCheckAppUpdate() {
+  // --mcp-only intentionally skips normal startup initialization. This setup
+  // is idempotent and explicitly keeps auto-download disabled in app_updater.
+  setupAppUpdater();
+  return await checkForAppUpdate(false);
+}
+
+async function mcpSetWishlist({ itemId, wishlisted } = {}) {
+  try {
+    return await runWithBoothCookieLoginFallback(async () => {
+      const id = String(itemId || '').trim();
+      if (!id) return { error: 'itemId_required' };
+      if (typeof wishlisted !== 'boolean') return { error: 'wishlisted_required' };
+      let meta = [];
+      if (fs.existsSync(META_PATH)) {
+        try { meta = JSON.parse(fs.readFileSync(META_PATH, 'utf8')); } catch { meta = []; }
+        if (!Array.isArray(meta)) meta = [];
+      }
+      const existing = meta.find((row) => String(row?.itemId || '') === id);
+      if (existing) {
+        const current = Boolean(existing.isWishlisted);
+        if (current === wishlisted) {
+          const boothResult = wishlisted
+            ? await wishlistService.addItemToAvatoolWishListName(id)
+            : await wishlistService.removeItemFromAvatoolWishListName(id);
+          if (!boothResult?.ok) {
+            return {
+              ok: false,
+              partial: true,
+              localChanged: false,
+              boothSynced: false,
+              boothError: boothResult?.error || 'booth_wishlist_sync_failed',
+              itemId: id,
+              isWishlisted: wishlisted,
+              changed: false,
+            };
+          }
+          return { ok: true, itemId: id, isWishlisted: wishlisted, changed: false, localChanged: false, boothSynced: true };
+        }
+        writeMetaFile(meta.map((row) => String(row?.itemId || '') === id ? { ...row, isWishlisted: wishlisted } : row));
+        const boothResult = wishlisted
+          ? await wishlistService.addItemToAvatoolWishListName(id)
+          : await wishlistService.removeItemFromAvatoolWishListName(id);
+        if (!boothResult?.ok) {
+          return {
+            ok: false,
+            partial: true,
+            localChanged: true,
+            boothSynced: false,
+            boothError: boothResult?.error || 'booth_wishlist_sync_failed',
+            itemId: id,
+            isWishlisted: wishlisted,
+            changed: true,
+          };
+        }
+        return { ok: true, itemId: id, isWishlisted: wishlisted, changed: true, localChanged: true, boothSynced: true };
+      }
+      if (!wishlisted) return { ok: false, error: 'item_not_found' };
+      const resolved = await wishlistService.resolveWishlistCandidate(id, { syncBooth: false });
+      if (!resolved?.ok) return { error: resolved?.error || 'wishlist_candidate_resolution_failed' };
+      writeMetaFile(dedupeMetaItemsByItemId([...meta, resolved.item]));
+      const resolvedItemId = String(resolved.itemId || id);
+      const boothResult = await wishlistService.addItemToAvatoolWishListName(resolvedItemId);
+      if (!boothResult?.ok) {
+        return {
+          ok: false,
+          partial: true,
+          localChanged: true,
+          boothSynced: false,
+          boothError: boothResult?.error || 'booth_wishlist_sync_failed',
+          itemId: resolvedItemId,
+          isWishlisted: true,
+          changed: true,
+        };
+      }
+      return { ok: true, itemId: resolvedItemId, isWishlisted: true, changed: true, localChanged: true, boothSynced: true };
+    });
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+async function mcpImportBoothWishlist() {
+  try {
+    return await runWithBoothCookieLoginFallback(async () => {
+      const result = await wishlistService.importBoothWishlist();
+      return result;
+    });
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+async function mcpAddToBoothCart({ itemId, variationName } = {}) {
+  try {
+    return await runWithBoothCookieLoginFallback(async () => {
+      if (typeof addWishlistItemToBoothCart !== 'function') return { error: 'cart_api_unavailable' };
+      return await addWishlistItemToBoothCart(String(itemId || '').trim(), variationName ? String(variationName) : undefined);
+    });
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+function mcpApplyRuntimeSettings(nextSettings, trigger) {
+  const merged = { ...settingsMgr.getSettings(), ...settingsMgr.pickAllowedSettings(nextSettings || {}) };
+  settingsMgr.normalizeSettingsInPlace(merged);
+  saveSettings(merged);
+  queueMgr.getQueueState().concurrency = merged.concurrency;
+  ensureRuntimeDirs();
+  ensureFolderIconBootstrapForProjects(merged.unityProjects, trigger);
+  startAutoCheckTimer();
+  startDownloadScheduler();
+  startAppUpdateAutoCheckTimer();
+  syncWindowsStartupRegistration();
+  return settingsMgr.getSettings();
+}
+
+function mcpAssertNoSensitiveSettingsInput(patch) {
+  for (const key of Object.keys(patch || {})) {
+    if (/(?:cookie|token|secret|password|passwd|authorization|csrf|credential|session)/i.test(key)) {
+      throw new Error('sensitive_setting_not_allowed');
+    }
+  }
+}
+
+function mcpUpdateSettings({ patch } = {}) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { ok: false, error: 'settings_patch_required' };
+  try {
+    mcpAssertNoSensitiveSettingsInput(patch);
+    return { ok: true, settings: mcpApplyRuntimeSettings(patch, 'mcp-update-settings') };
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+function mcpProfileName(value) {
+  const name = String(value || '').trim();
+  if (!name) return '';
+  if (name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)) return '';
+  return name;
+}
+
+function mcpApplySettingsProfile({ profileName } = {}) {
+  const name = mcpProfileName(profileName);
+  if (!name) return { error: 'profile_name_required' };
+  const profile = settingsMgr.getSettingsProfiles()?.[name];
+  if (!profile || typeof profile !== 'object') return { error: 'profile_not_found' };
+  try {
+    const settingsResult = mcpApplyRuntimeSettings(profile, 'mcp-apply-settings-profile');
+    appendOperationLog('settings-profile', `MCP applied settings profile: ${name}`);
+    return { ok: true, name, settings: settingsResult };
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+}
+
+function mcpSaveSettingsProfile({ profileName, patch } = {}) {
+  const name = mcpProfileName(profileName);
+  if (!name) return { error: 'profile_name_required' };
+  if (patch !== undefined && (!patch || typeof patch !== 'object' || Array.isArray(patch))) return { error: 'settings_patch_invalid' };
+  try {
+    mcpAssertNoSensitiveSettingsInput(patch || {});
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+  const data = {
+    ...settingsMgr.getSettings(),
+    ...settingsMgr.pickAllowedSettings(patch || {}),
+  };
+  settingsMgr.normalizeSettingsInPlace(data);
+  const profiles = settingsMgr.getSettingsProfiles();
+  const hadPrevious = Object.prototype.hasOwnProperty.call(profiles, name);
+  const previous = profiles[name];
+  profiles[name] = data;
+  try {
+    settingsMgr.saveSettingsProfiles();
+    appendOperationLog('settings-profile', `MCP saved settings profile: ${name}`);
+    return { ok: true, name };
+  } catch (error) {
+    if (hadPrevious) profiles[name] = previous;
+    else delete profiles[name];
+    return { error: error?.message || String(error) };
+  }
+}
+
+function mcpClearOperationLogs() {
+  logMgr.clearOperationLogs();
+  saveOperationLogs();
+  appendOperationLog('operation-log', 'Operation logs cleared via MCP');
+  return { ok: true, logs: [] };
+}
+
+const mcpTools = createMcpToolService({
+  metaMgr: { getMetaCache: mcpAssetRows },
+  settingsMgr: { getSettings: () => settings },
+  unityMgr: { listRunningUnityProjectPaths },
+  queueMgr,
+  logMgr,
+  appVersion: app.getVersion?.() || require('./package.json').version,
+  syncLibrary: mcpSyncLibrary,
+  enqueueDownload: mcpEnqueueDownload,
+  importAssetToUnity: mcpImportAssetToUnity,
+  getOperationLogs: mcpGetOperationLogs,
+  runHealthCheck: () => runHealthCheck('mcp'),
+  getStorageUsage: getStorageUsageSnapshot,
+  listItemFiles: mcpListItemFiles,
+  listUnityPackages: mcpListUnityPackages,
+  getProjectItems: mcpGetProjectItems,
+  searchBooth: mcpSearchBooth,
+  getBoothItem: mcpGetBoothItem,
+  listBootstrapChoices: mcpListBootstrapChoices,
+  controlDownloadQueue: mcpControlDownloadQueue,
+  extractItem: mcpExtractItem,
+  installVpmDependencies: mcpInstallVpmDependencies,
+  runAutoBootstrap: mcpRunAutoBootstrap,
+  getBoothCart: mcpGetBoothCart,
+  listSettingsProfiles: mcpListSettingsProfiles,
+  getImportHistory: mcpGetImportHistory,
+  scanUnitypackage: mcpScanUnitypackage,
+  analyzeVpmDependencies: mcpAnalyzeVpmDependencies,
+  getRuntimeLogs: mcpGetRuntimeLogs,
+  checkAppUpdate: mcpCheckAppUpdate,
+  setWishlist: mcpSetWishlist,
+  importBoothWishlist: mcpImportBoothWishlist,
+  addToBoothCart: mcpAddToBoothCart,
+  updateSettings: mcpUpdateSettings,
+  applySettingsProfile: mcpApplySettingsProfile,
+  saveSettingsProfile: mcpSaveSettingsProfile,
+  clearOperationLogs: mcpClearOperationLogs,
+});
+const mcpControl = createMcpControlServer({
+  endpointPath: path.join(APP_DATA_ROOT, 'mcp-endpoint.json'),
+  version: app.getVersion?.() || require('./package.json').version,
+  allowedTools: mcpTools.allowedTools,
+  callTool: mcpTools.callTool,
+});
+function startMcpControl() {
+  mcpControl.start().catch((error) => console.warn('MCP control server failed to start:', error?.message || error));
+}
+function stopMcpControl() {
+  mcpControl.stop().catch((error) => console.warn('MCP control server failed to stop:', error?.message || error));
+}
+
+function syncWindowsStartupRegistration() {
+  ensureWindowsStartupRegistration({
+    app,
+    processObj: process,
+    enabled: Boolean(settings.launchAtLogin),
+  });
+}
+
 setupSingleInstanceLock({
   app,
   processObj: process,
@@ -1414,23 +2189,29 @@ if (process.argv.includes('--smoke-test')) {
       readBoothCookiesFromFile,
     });
   });
+} else if (process.argv.includes('--mcp-only')) {
+  // Headless bridge mode: initialize the same managers, but do not start UI,
+  // schedulers, VCC watchers, health checks, update checks, or bootstrap work.
+  app.whenReady().then(() => {
+    startMcpControl();
+  });
 } else {
 
 app.whenReady().then(() => {
+  startMcpControl();
   if (process.platform === 'win32') app.setAppUserModelId(DESKTOP_NOTIFY_APP_ID);
-  ensureWindowsStartupRegistration({
-    app,
-    processObj: process,
-  });
+  syncWindowsStartupRegistration();
   const scriptSync = ensureInstallScriptsAssets();
   if (!scriptSync?.ok) {
     console.warn('Failed to prepare install scripts asset:', scriptSync?.error || 'unknown_error');
   }
   createWindow();
   setupAppUpdater();
-  setTimeout(() => {
-    checkForAppUpdate(false).catch(() => {});
-  }, 5000);
+  if (settings.appUpdateAutoCheckEnabled !== false) {
+    setTimeout(() => {
+      checkForAppUpdate(false).catch(() => {});
+    }, 5000);
+  }
   startAppUpdateAutoCheckTimer();
   startAutoCheckTimer();
   startDownloadScheduler();
@@ -1448,9 +2229,14 @@ app.whenReady().then(() => {
 } // end of non-smoke-test block
 
 app.on('window-all-closed', () => {
+  stopMcpControl();
   stopVccWatcher();
   schedulerSvc.stopAll();
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  stopMcpControl();
 });
 
 app.on('activate', () => {
@@ -1574,6 +2360,11 @@ registerIpcHandlers({
     sanitizeRendererLogText,
   },
   appUpdater,
+  agentIntegrationService,
+  appEdition: APP_EDITION,
+  ownerVaultService,
+  getOwnerStandardDataStatus,
+  importStandardDataToOwner,
   metaMgr: {
     applyVersionTrackingKeepingManual,
     ensureMetaWithVersionTracking,
@@ -1657,6 +2448,8 @@ registerIpcHandlers({
   startAutoCheckTimer,
   maybeRunScheduledDownloads,
   startDownloadScheduler,
+  startAppUpdateAutoCheckTimer,
+  syncWindowsStartupRegistration,
   runHealthCheck,
   openLoginWindowFlow: loginWindowMgr.openLoginWindowFlow,
   enrichUpdatesWithVersionDiff,
