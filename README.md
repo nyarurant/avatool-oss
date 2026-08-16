@@ -88,7 +88,7 @@ Archive extraction
 
 ### Download → Unity import
 
-BOOTH で購入したアイテムをダウンロードし、展開された `.unitypackage` を Unity プロジェクトへインポートするまでの一連の流れです。
+ダウンロードボタンを押すと、進捗表示を伴ってファイルを取得し、zip / 7z / rar を自動展開します。展開後に収集された `.unitypackage` から対象を選び、Unity 起動中なら Live import、閉じていてもバックグラウンドインポートを選べます。インポート先プロジェクトを選ぶと、進捗表示付きで実行され、完了後はカードのボタンが「ダウンロード」から「インポート」へ切り替わります。
 
 <p align="center">
   <img src="assets/demo/avatool-demo.gif" width="820" alt="Download to Unity import demo" />
@@ -96,7 +96,7 @@ BOOTH で購入したアイテムをダウンロードし、展開された `.un
 
 ### ライブラリ同期・更新確認
 
-新しく購入したアイテムの検出と、既存アイテムの更新チェックをまとめて実行します。
+「更新アクション」ボタンから「更新確認だけ」「同期する」「両方（推奨）」の 3 モードを選べます。「両方」を選ぶと、まずライブラリ同期で新しく購入したアイテムを検出し、続けて既存アイテムの更新有無をチェックします。更新が見つかると「N 件の更新を検出」ポップアップが表示され、対象アイテムをその場で再ダウンロードできます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-library-sync.gif" width="820" alt="Avatool library sync and update check demo" />
@@ -104,7 +104,7 @@ BOOTH で購入したアイテムをダウンロードし、展開された `.un
 
 ### アバターフィルター
 
-対応アバターでライブラリを絞り込み、そのアバター向けのアイテムだけを表示します。
+「アバターで絞り込み」からサムネイル付きの一覧を開き、対応アバターを 1 つ選ぶだけで、そのアバター本体と対応する衣装・髪型などの関連アイテムだけがライブラリに残ります。フィルターを外せば元の一覧にすぐ戻れます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-avatar-filter.gif" width="820" alt="Avatool avatar filter demo" />
@@ -112,7 +112,7 @@ BOOTH で購入したアイテムをダウンロードし、展開された `.un
 
 ### 一括インポート
 
-ダウンロード済みの複数アイテムを選択し、まとめて Unity へインポートします。
+「一括インポート」で選択モードに入り、ダウンロード済みの複数アイテムにチェックを付けて実行すると、選んだアイテムすべての `.unitypackage` を一度にスキャンし、1 つのパッケージ選択画面にまとめて表示します。インポート先プロジェクトを選べば、複数アイテムをまとめて 1 回の操作でインポートできます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-batch-import.gif" width="820" alt="Avatool batch import demo" />
@@ -120,7 +120,7 @@ BOOTH で購入したアイテムをダウンロードし、展開された `.un
 
 ### プロジェクト内検索
 
-選択した Unity プロジェクトに、ライブラリ内のどのアイテムが既にインポート済みかを照合します。
+「プロジェクト内検索」で対象の Unity プロジェクトを選び「照合」を実行すると、そのプロジェクトのフォルダ構成を実際にスキャンして、ライブラリ内のどのアイテムが既にインポート済みかを判定します。「このアイテム、あのプロジェクトに入れたっけ？」を確認する手間を省けます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-project-items.gif" width="820" alt="Avatool project items demo" />
