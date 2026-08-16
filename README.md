@@ -127,10 +127,19 @@ Archive extraction
 - 新規 / 更新あり / 変化なしの差分判定
 - 未ダウンロード / 未インポート / 更新ありでの絞り込み
 - アバター別フィルタリング
-- 商品名・作者名での検索
+- ライブラリ内の商品名・作者名での検索
 - BOOTH URL / 商品 ID からの手動追加
 - サムネイルキャッシュとプレビュー
-- 対応アバター情報の表示
+- 対応アバター情報の表示・詳細解析
+
+### BOOTH 検索
+
+購入前の商品もアプリ内から直接調べられます。
+
+- キーワードでの BOOTH 商品検索
+- トップページのおすすめセクション表示
+- 商品詳細・関連商品の閲覧
+- ほしいリストへの登録
 
 ### Download / archive processing
 
@@ -298,6 +307,8 @@ BOOTH の認証状態は Electron の `safeStorage` を利用してローカル�
 ### Start
 
 ```bash
+git clone https://github.com/nyarurant/avatool-oss.git
+cd avatool-oss
 npm ci
 npm start
 ```
@@ -369,7 +380,7 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 ## Repository layout
 
 ```text
-avatool/
+avatool-oss/
 ├─ .github/workflows/    # CI
 ├─ __tests__/            # Jest tests
 ├─ assets/               # icons, styles, README demos
@@ -380,6 +391,7 @@ avatool/
 ├─ main.js               # Electron main process
 ├─ preload.js            # renderer bridge
 ├─ render.js             # renderer entry
+├─ LICENSE
 └─ package.json
 ```
 
@@ -435,7 +447,7 @@ README 側に「最新バージョン」を固定記載せず、`package.json` �
 
 ## License
 
-ISC License
+[ISC License](LICENSE)
 
 ---
 
