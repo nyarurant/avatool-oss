@@ -9,10 +9,14 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.410-blue" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.427-blue" />
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-lightgrey?logo=windows" />
-  <img alt="Electron" src="https://img.shields.io/badge/Electron-38-47848F?logo=electron&logoColor=white" />
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/license-ISC-green" />
+</p>
+
+<p align="center">
+  <img src="assets/demo/avatool-demo.gif" width="720" alt="Avatool デモ: ライブラリ検索・プレビュー・設定画面の操作" />
 </p>
 
 ---
