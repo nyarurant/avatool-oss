@@ -2,15 +2,24 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+
+// unitypackage files are gzip-compressed tar archives; the reconcile worker
+// (lib/unity_reconcile_worker.js) gunzips them for real, so a plain-text
+// placeholder fails with "incorrect header check". A gzipped, all-zero
+// "tar" (i.e. no entries) parses cleanly as an empty package instead.
+const FAKE_UNITYPACKAGE_BYTES = zlib.gzipSync(Buffer.alloc(1024));
 
 // Small fictional library for the README demo recording. No real BOOTH
 // shops/creators are referenced; names are made up for the screenshot.
+// Moonlight Kimono and Cinder Wolf Hair are tagged compatible with the
+// "Nova" avatar so the avatar-filter demo has something real to narrow down.
 function buildDemoLibrary(now) {
   const items = [
-    { itemId: '80001', itemName: 'Moonlight Kimono', authorName: 'Nocturne Atelier', category: '衣装' },
-    { itemId: '80002', itemName: 'Cinder Wolf Hair', authorName: 'Ember Works', category: '髪型' },
+    { itemId: '80001', itemName: 'Moonlight Kimono', authorName: 'Nocturne Atelier', category: '衣装', supportedAvatarsInferred: ['Nova'] },
+    { itemId: '80002', itemName: 'Cinder Wolf Hair', authorName: 'Ember Works', category: '髪型', supportedAvatarsInferred: ['Nova'] },
     { itemId: '80003', itemName: 'Glass Prism Eyes', authorName: 'Lumen Craft', category: 'テクスチャ' },
-    { itemId: '80004', itemName: 'Starlit Original Avatar', authorName: 'Nova Studio', category: 'アバター' },
+    { itemId: '80004', itemName: 'Starlit Original Avatar', authorName: 'Nova Studio', category: 'アバター', isAvatarItem: true, supportedAvatars: ['Nova'] },
     { itemId: '80005', itemName: 'Velvet Rose Dress', authorName: 'Nocturne Atelier', category: '衣装' },
     { itemId: '80006', itemName: 'Frostbyte Accessory Set', authorName: 'Ember Works', category: '小物' },
   ];
@@ -29,6 +38,13 @@ function buildDemoLibrary(now) {
     latestVersion: { detectedAt: now, filesHash: `demo-hash-${item.itemId}`, filesHashStable: `demo-stable-${item.itemId}` },
     hasUpdate: false,
     lastChecked: now,
+    isAvatarItem: Boolean(item.isAvatarItem),
+    supportedAvatars: item.supportedAvatars || [],
+    supportedAvatarsInferred: item.supportedAvatarsInferred || [],
+    supportedAvatarAnalysis: (item.supportedAvatars || item.supportedAvatarsInferred)
+      ? { status: 'confirmed', primaryAvatar: 'Nova', candidates: [{ name: 'Nova', score: 95, reasons: ['demo'] }] }
+      : null,
+    avatarAnalysisCheckedAt: (item.supportedAvatars || item.supportedAvatarsInferred) ? now : '',
   }));
 }
 
@@ -48,13 +64,16 @@ function createDemoData(dataDir) {
   // Item 80004 ships with real (placeholder) files on disk so its preview
   // modal shows a populated file tree instead of an empty/error state.
   const downloadedDir = makeItemDir(downloadRoot, '80004', 'Starlit Original Avatar');
-  fs.writeFileSync(path.join(downloadedDir, 'Starlit_Original_Avatar.unitypackage'), 'demo unitypackage placeholder\n', 'utf8');
+  fs.writeFileSync(path.join(downloadedDir, 'Starlit_Original_Avatar.unitypackage'), FAKE_UNITYPACKAGE_BYTES);
   const extractedRoot = path.join(downloadedDir, '__extracted');
   fs.mkdirSync(path.join(extractedRoot, 'StarlitAvatar', 'Textures'), { recursive: true });
   fs.mkdirSync(path.join(extractedRoot, 'StarlitAvatar', 'Prefabs'), { recursive: true });
   fs.writeFileSync(path.join(extractedRoot, 'StarlitAvatar', 'Readme.txt'), 'demo readme\n', 'utf8');
   fs.writeFileSync(path.join(extractedRoot, 'StarlitAvatar', 'Prefabs', 'Avatar.prefab'), 'demo prefab placeholder\n', 'utf8');
   fs.writeFileSync(path.join(extractedRoot, 'StarlitAvatar', 'Textures', 'body_albedo.png'), 'demo texture placeholder\n', 'utf8');
+  // collect-unitypackages (used by the project-items reconcile demo) only
+  // scans inside __extracted/, matching how real BOOTH archives unpack.
+  fs.writeFileSync(path.join(extractedRoot, 'StarlitAvatar', 'Starlit_Original_Avatar.unitypackage'), FAKE_UNITYPACKAGE_BYTES);
   fs.writeFileSync(path.join(extractedRoot, '__extracted.flag'), 'ok', 'utf8');
 
   fs.writeFileSync(path.join(dataDir, 'librarymeta.json'), JSON.stringify(items, null, 2), 'utf8');

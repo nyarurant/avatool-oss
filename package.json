@@ -24,6 +24,8 @@
     "test:ui-probe": "node scripts/ui_probe.js",
     "test:ui-probe:owner": "node scripts/ui_probe.js --owner",
     "demo:readme": "node scripts/demo/demo_readme.js",
+    "demo:avatar-filter": "node scripts/demo/demo_avatar_filter.js",
+    "demo:project-items": "node scripts/demo/demo_project_items.js",
     "test:unit": "jest",
     "mcp:bridge": "electron . --mcp-only",
     "test:unit:watch": "jest --watch",
