@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/nyarurant/avatool/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nyarurant/avatool/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Version" src="https://img.shields.io/github/package-json/v/nyarurant/avatool?filename=package.json" />
+  <a href="https://github.com/nyarurant/avatool-oss/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nyarurant/avatool-oss/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="Version" src="https://img.shields.io/github/package-json/v/nyarurant/avatool-oss?filename=package.json" />
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white" />
   <img alt="Electron" src="https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/license-ISC-green" />
