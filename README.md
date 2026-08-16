@@ -94,36 +94,37 @@ BOOTH で購入したアイテムをダウンロードし、展開された `.un
   <img src="assets/demo/avatool-demo.gif" width="820" alt="Download to Unity import demo" />
 </p>
 
-### その他の機能デモ
+### ライブラリ同期・更新確認
 
-よく使う 4 つの機能を、それぞれ短い GIF で紹介します。
+新しく購入したアイテムの検出と、既存アイテムの更新チェックをまとめて実行します。
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <strong>ライブラリ同期・更新確認</strong><br>
-      新しく購入したアイテムの検出と、既存アイテムの更新チェックをまとめて実行します。<br><br>
-      <img src="assets/demo/avatool-demo-library-sync.gif" width="100%" alt="Avatool library sync and update check demo" />
-    </td>
-    <td width="50%" valign="top">
-      <strong>アバターフィルター</strong><br>
-      対応アバターでライブラリを絞り込み、そのアバター向けのアイテムだけを表示します。<br><br>
-      <img src="assets/demo/avatool-demo-avatar-filter.gif" width="100%" alt="Avatool avatar filter demo" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <strong>一括インポート</strong><br>
-      ダウンロード済みの複数アイテムを選択し、まとめて Unity へインポートします。<br><br>
-      <img src="assets/demo/avatool-demo-batch-import.gif" width="100%" alt="Avatool batch import demo" />
-    </td>
-    <td width="50%" valign="top">
-      <strong>プロジェクト内検索</strong><br>
-      選択した Unity プロジェクトに、ライブラリ内のどのアイテムが既にインポート済みかを照合します。<br><br>
-      <img src="assets/demo/avatool-demo-project-items.gif" width="100%" alt="Avatool project items demo" />
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="assets/demo/avatool-demo-library-sync.gif" width="820" alt="Avatool library sync and update check demo" />
+</p>
+
+### アバターフィルター
+
+対応アバターでライブラリを絞り込み、そのアバター向けのアイテムだけを表示します。
+
+<p align="center">
+  <img src="assets/demo/avatool-demo-avatar-filter.gif" width="820" alt="Avatool avatar filter demo" />
+</p>
+
+### 一括インポート
+
+ダウンロード済みの複数アイテムを選択し、まとめて Unity へインポートします。
+
+<p align="center">
+  <img src="assets/demo/avatool-demo-batch-import.gif" width="820" alt="Avatool batch import demo" />
+</p>
+
+### プロジェクト内検索
+
+選択した Unity プロジェクトに、ライブラリ内のどのアイテムが既にインポート済みかを照合します。
+
+<p align="center">
+  <img src="assets/demo/avatool-demo-project-items.gif" width="820" alt="Avatool project items demo" />
+</p>
 
 ---
 
