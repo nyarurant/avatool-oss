@@ -27,6 +27,7 @@
     "demo:avatar-filter": "node scripts/demo/demo_avatar_filter.js",
     "demo:project-items": "node scripts/demo/demo_project_items.js",
     "demo:library-sync": "node scripts/demo/demo_library_sync.js",
+    "demo:batch-import": "node scripts/demo/demo_batch_import.js",
     "test:unit": "jest",
     "mcp:bridge": "electron . --mcp-only",
     "test:unit:watch": "jest --watch",
