@@ -20,8 +20,7 @@ const { createDemoData } = require('./demo_data');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const CDP_PORT = 9222;
-const FRAME_INTERVAL_MS = 40; // 25fps capture; ffmpeg retimes to the real measured fps.
-const GIF_FPS = 18;
+const GIF_FPS = 30; // Page.startScreencast easily sustains this; ffmpeg retimes to the real measured fps if it can't.
 const GIF_WIDTH = 960;
 
 function delay(ms) {
@@ -76,7 +75,12 @@ function connectCdp(wsPath) {
     let upgraded = false;
     let buf = Buffer.alloc(0);
     const pending = new Map();
+    const eventHandlers = new Map();
     let nextId = 1;
+
+    function on(method, handler) {
+      eventHandlers.set(method, handler);
+    }
 
     function send(method, params = {}) {
       const id = nextId++;
@@ -132,7 +136,7 @@ function connectCdp(wsPath) {
         if (str.includes('\r\n\r\n')) {
           upgraded = true;
           buf = buf.slice(buf.indexOf('\r\n\r\n') + 4);
-          resolve({ send, client });
+          resolve({ send, on, client });
         }
         return;
       }
@@ -146,6 +150,8 @@ function connectCdp(wsPath) {
             pending.delete(msg.id);
             if (msg.error) rej(new Error(JSON.stringify(msg.error)));
             else res(msg.result);
+          } else if (msg.method && eventHandlers.has(msg.method)) {
+            eventHandlers.get(msg.method)(msg.params);
           }
         } catch {
           // ignore malformed frame
@@ -241,7 +247,7 @@ async function runDemo({ outPath, sequence, prepareData }) {
     await delay(1500);
     const wsPath = await getPageWsPath();
     if (!wsPath) throw new Error('no page target found');
-    const { send } = await connectCdp(wsPath);
+    const { send, on } = await connectCdp(wsPath);
 
     await send('Page.enable');
     await send('Runtime.enable');
@@ -276,36 +282,54 @@ async function runDemo({ outPath, sequence, prepareData }) {
     await evalJsBound(cursorScript);
     await evalJsBound(`(async () => { document.querySelector('#view-grid-btn')?.click(); await window.__demoCursor.pause(200); })()`);
 
-    // Background capture loop — runs concurrently with the sequence below.
-    // Page.captureScreenshot shares the same CDP connection as the
-    // interaction calls, so real per-frame latency can exceed
-    // FRAME_INTERVAL_MS; the actual achieved fps (not the nominal one) is
-    // what matters for encoding a correctly-timed GIF, so it's measured
-    // from wall-clock time.
-    let capturing = true;
+    // Background capture — runs concurrently with the sequence below.
+    // Previously polled Page.captureScreenshot in a loop sharing the same
+    // CDP connection as the interaction calls; each call is a synchronous
+    // request/response round trip (full compositor readback + encode +
+    // base64 transfer), which measured only ~6-10fps against the 25fps
+    // nominal target no matter how the format/quality/interval were tuned —
+    // that per-call overhead, not encoding cost, was the real ceiling.
+    // Page.startScreencast instead has Chromium push frames as they're
+    // actually composited (event-driven, no per-frame request needed),
+    // which is the CDP-intended mechanism for continuous capture and
+    // measurably outperforms polling (~60fps vs ~6-10fps). Every pushed
+    // frame must be acknowledged (Page.screencastFrameAck) or the stream
+    // stalls. PNG, not JPEG: JPEG screencast frames carried inconsistent
+    // per-frame colorimetry metadata that also broke the filter graph (see
+    // below) — PNG doesn't have that specific problem, though it still has
+    // the one below.
+    //
+    // The very first couple of screencast frames arrive at 1280x796, one
+    // viewport layout pass short of the 1280x800 that Emulation.setDevice­
+    // MetricsOverride actually requested and every later frame honors.
+    // ffmpeg's paletteuse filter cannot survive ANY mid-stream input-size
+    // change in its threaded filter graph — even one a `scale` filter
+    // upstream fully absorbs — and aborts with "Internal bug, should not
+    // have happened" the instant frame 3 shows up at the "real" size. So
+    // this discards any frame that isn't exactly 1280x800 (read straight
+    // out of the PNG IHDR chunk, offset 16) rather than trying to make
+    // ffmpeg tolerant of a size change it never actually needs to see.
     let frameCount = 0;
     const captureStart = Date.now();
     let captureEnd = captureStart;
-    const captureLoop = (async () => {
-      while (capturing) {
-        const frameStart = Date.now();
-        try {
-          const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
-          frameCount += 1;
-          fs.writeFileSync(path.join(framesDir, `frame_${String(frameCount).padStart(5, '0')}.png`), Buffer.from(result.data, 'base64'));
-          captureEnd = Date.now();
-        } catch {
-          // a capture failing mid-shutdown is fine; the loop just stops
-        }
-        const wait = FRAME_INTERVAL_MS - (Date.now() - frameStart);
-        if (wait > 0) await delay(wait);
-      }
-    })();
+    on('Page.screencastFrame', (params) => {
+      const buf = Buffer.from(params.data, 'base64');
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
+      if (width !== 1280 || height !== 800) return;
+      frameCount += 1;
+      fs.writeFileSync(path.join(framesDir, `frame_${String(frameCount).padStart(5, '0')}.png`), buf);
+      captureEnd = Date.now();
+    });
+    await send('Page.startScreencast', {
+      format: 'png', maxWidth: 1280, maxHeight: 800, everyNthFrame: 1,
+    });
 
     await sequence({ send, evalJs: evalJsBound, delay, dataDir, fakeVccProjectPath });
 
-    capturing = false;
-    await captureLoop;
+    await send('Page.stopScreencast');
+    await delay(150); // let any in-flight screencastFrame event finish writing to disk
 
     const actualElapsedSec = Math.max(0.5, (captureEnd - captureStart) / 1000);
     const actualFps = frameCount / actualElapsedSec;
@@ -313,11 +337,18 @@ async function runDemo({ outPath, sequence, prepareData }) {
     console.log(`captured ${frameCount} frames over ${actualElapsedSec.toFixed(2)}s (${actualFps.toFixed(2)} fps actual, encoding at ${effectiveFps} fps)`);
     if (frameCount < 10) throw new Error('too few frames captured, aborting GIF encode');
 
+    // scale=1280:800 first: Page.startScreencast's maxWidth/maxHeight
+    // clamp occasionally yields a frame or two at a slightly different
+    // pixel size than the rest (observed 1280x796 among a run of otherwise
+    // 1280x800 frames) — ffmpeg's filter graph errors ("Internal bug,
+    // should not have happened") if the input stream's dimensions change
+    // mid-stream, so every frame is forced to the exact requested viewport
+    // size before the real downscale to GIF_WIDTH.
     const palettePath = path.join(base, 'palette.png');
     execFileSync('ffmpeg', [
       '-y', '-framerate', actualFps.toFixed(3),
       '-i', path.join(framesDir, 'frame_%05d.png'),
-      '-vf', `fps=${effectiveFps},scale=${GIF_WIDTH}:-1:flags=lanczos,palettegen=stats_mode=diff`,
+      '-vf', `fps=${effectiveFps},scale=1280:800,scale=${GIF_WIDTH}:-1:flags=lanczos,palettegen=stats_mode=diff`,
       '-update', '1',
       palettePath,
     ], { stdio: 'inherit' });
@@ -325,7 +356,7 @@ async function runDemo({ outPath, sequence, prepareData }) {
       '-y', '-framerate', actualFps.toFixed(3),
       '-i', path.join(framesDir, 'frame_%05d.png'),
       '-i', palettePath,
-      '-lavfi', `fps=${effectiveFps},scale=${GIF_WIDTH}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer`,
+      '-lavfi', `fps=${effectiveFps},scale=1280:800,scale=${GIF_WIDTH}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer`,
       '-loop', '0',
       OUT_PATH,
     ], { stdio: 'inherit' });
