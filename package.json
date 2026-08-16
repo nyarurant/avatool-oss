@@ -26,6 +26,7 @@
     "demo:readme": "node scripts/demo/demo_readme.js",
     "demo:avatar-filter": "node scripts/demo/demo_avatar_filter.js",
     "demo:project-items": "node scripts/demo/demo_project_items.js",
+    "demo:library-sync": "node scripts/demo/demo_library_sync.js",
     "test:unit": "jest",
     "mcp:bridge": "electron . --mcp-only",
     "test:unit:watch": "jest --watch",
