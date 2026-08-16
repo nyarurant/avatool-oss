@@ -261,7 +261,10 @@ async function runDemo({ outPath, sequence, prepareData }) {
     {
       const start = Date.now();
       let ready = false;
-      while (Date.now() - start < 20000) {
+      // 40s, not 20s: the real-data library (real cached JPG thumbnails
+      // copied in by createDemoData) takes measurably longer to load and
+      // render than the old all-placeholder fictional dataset did.
+      while (Date.now() - start < 40000) {
         ready = await evalJsBound(`document.querySelectorAll('[data-item-id]').length > 0 && typeof window.boothAPI?.getAppEdition === 'function'`);
         if (ready) break;
         await delay(250);

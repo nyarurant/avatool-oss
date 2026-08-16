@@ -37,7 +37,7 @@ const OUT_PATH = process.argv[2] || path.join(ROOT, 'assets', 'demo', 'avatool-d
 //   returns a summary shaped like the real handler's response.
 // - Check: lib/ipc_handlers.js's check-updates handler is gated the same
 //   way — in demo mode it delegates to #simulateCheckUpdates(), which flags
-//   one already-downloaded demo item (Starlit Original Avatar, 80004) as
+//   one already-downloaded demo item (the "Nix" avatar, 6481122) as
 //   hasUpdate and returns an { updates, totalUpdates } shaped like the real
 //   handler's response, so the real showUpdateNotification() popup fires.
 // - Update download: the notification popup's real "更新分をダウンロード"
@@ -50,9 +50,9 @@ const OUT_PATH = process.argv[2] || path.join(ROOT, 'assets', 'demo', 'avatool-d
 // Everything else — the mode-picker modal, spinners, the notification popup,
 // grid re-render, badges — is the real renderer code path, unmodified.
 async function sequence({ evalJs, delay }) {
-  const UPDATE_ITEM_ID = '80004';
-  const UPDATE_TITLE = 'Starlit Original Avatar';
-  const UPDATE_FILE = 'Starlit_Original_Avatar_v2.unitypackage';
+  const UPDATE_ITEM_ID = '6481122';
+  const UPDATE_TITLE = '『ニクス -Nix-』オリジナル3Dモデル';
+  const UPDATE_FILE = 'Nix_1.02.zip';
 
   await evalJs(`window.__demoCursor.pause(400)`);
   await evalJs(`window.__demoCursor.show()`);

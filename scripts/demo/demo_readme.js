@@ -22,9 +22,12 @@ const OUT_PATH = process.argv[2] || path.join(ROOT, 'assets', 'demo', 'avatool-d
 // button-state transitions, file listing — is genuine app code running
 // against real (demo-placeholder) files this writes to disk.
 async function sequence({ evalJs, delay }) {
-  const ITEM_ID = '80001';
-  const ITEM_TITLE = 'Moonlight Kimono';
-  const ITEM_FILE = 'Moonlight_Kimono.zip';
+  // Real item the user owns (see scripts/demo/demo_data.js) — not yet
+  // downloaded at the start of this demo, so its dl-btn genuinely reads
+  // "ダウンロード".
+  const ITEM_ID = '4358263';
+  const ITEM_TITLE = '[VRC Hair]オオカミ少女！ (オオカミ少女！)';
+  const ITEM_FILE = 'ANKA_オオカミ少女_.zip';
   const CARD = `[data-item-id="${ITEM_ID}"]`;
   const DL_BTN = `[data-item-id="${ITEM_ID}"] .dl-btn`;
 
