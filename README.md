@@ -34,6 +34,7 @@
 ---
 
 <a id="overview"></a>
+
 ## Avatool とは
 
 **Avatool** は、VRChat アバター改変で繰り返し発生する BOOTH アセット管理と Unity への導入作業をまとめて処理する Electron アプリです。
@@ -84,6 +85,7 @@ Archive extraction
 ---
 
 <a id="demo"></a>
+
 ## Demo
 
 ### Download → Unity import
@@ -129,6 +131,7 @@ Unity プロジェクトをスキャンし、ライブラリ内のどのアイ�
 ---
 
 <a id="features"></a>
+
 ## 主な機能
 
 ### BOOTH ライブラリ管理
@@ -229,6 +232,7 @@ Result recording
 ---
 
 <a id="setup"></a>
+
 ## セットアップ
 
 ### 動作環境
@@ -275,6 +279,7 @@ BOOTH の認証状態は Electron の `safeStorage` を利用してローカル�
 ---
 
 <a id="development"></a>
+
 ## 開発
 
 ### Requirements
@@ -397,6 +402,7 @@ avatool-oss/
 ---
 
 <a id="limitations"></a>
+
 ## 既知の制限
 
 - Windows 専用です
