@@ -13,8 +13,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/nyarurant/avatool-oss/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nyarurant/avatool-oss/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Version" src="https://img.shields.io/github/package-json/v/nyarurant/avatool-oss?filename=package.json" />
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white" />
   <img alt="Electron" src="https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/license-ISC-green" />
@@ -25,15 +23,17 @@
 </p>
 
 <p align="center">
-  <a href="#avatool-とは">概要</a> ·
+  <a href="#overview">概要</a> ·
   <a href="#demo">Demo</a> ·
-  <a href="#主な機能">機能</a> ·
-  <a href="#セットアップ">セットアップ</a> ·
-  <a href="#開発">開発</a> ·
-  <a href="#既知の制限">制限</a>
+  <a href="#features">機能</a> ·
+  <a href="#setup">セットアップ</a> ·
+  <a href="#development">開発</a> ·
+  <a href="#limitations">制限</a>
 </p>
 
 ---
+
+<a id="overview"></a>
 
 ## Avatool とは
 
@@ -84,11 +84,13 @@ Archive extraction
 
 ---
 
+<a id="demo"></a>
+
 ## Demo
 
 ### Download → Unity import
 
-ダウンロードボタンを押すと、進捗表示を伴ってファイルを取得し、zip / 7z / rar を自動展開します。展開後に収集された `.unitypackage` から対象を選び、Unity 起動中なら Live import、閉じていてもバックグラウンドインポートを選べます。インポート先プロジェクトを選ぶと、進捗表示付きで実行され、完了後はカードのボタンが「ダウンロード」から「インポート」へ切り替わります。
+ダウンロードボタンを押すと、進捗表示を伴ってファイルを取得し、zip / 7z / rar を自動展開します。展開後に収集された `.unitypackage` から対象を選び、Unity 起動中なら Live import、閉じていてもバックグラウンドインポートを選べます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo.gif" width="820" alt="Download to Unity import demo" />
@@ -96,7 +98,7 @@ Archive extraction
 
 ### ライブラリ同期・更新確認
 
-「更新アクション」ボタンから「更新確認だけ」「同期する」「両方（推奨）」の 3 モードを選べます。「両方」を選ぶと、まずライブラリ同期で新しく購入したアイテムを検出し、続けて既存アイテムの更新有無をチェックします。更新が見つかると「N 件の更新を検出」ポップアップが表示され、対象アイテムをその場で再ダウンロードできます。
+「更新アクション」からライブラリ同期と更新確認を実行できます。新規購入アイテムや既存アイテムの更新を検出し、対象をその場で再ダウンロードできます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-library-sync.gif" width="820" alt="Avatool library sync and update check demo" />
@@ -104,7 +106,7 @@ Archive extraction
 
 ### アバターフィルター
 
-「アバターで絞り込み」からサムネイル付きの一覧を開き、対応アバターを 1 つ選ぶだけで、そのアバター本体と対応する衣装・髪型などの関連アイテムだけがライブラリに残ります。フィルターを外せば元の一覧にすぐ戻れます。
+対応アバターを選択すると、そのアバター本体と対応する衣装・髪型などの関連アイテムだけに絞り込めます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-avatar-filter.gif" width="820" alt="Avatool avatar filter demo" />
@@ -112,7 +114,7 @@ Archive extraction
 
 ### 一括インポート
 
-「一括インポート」で選択モードに入り、ダウンロード済みの複数アイテムにチェックを付けて実行すると、選んだアイテムすべての `.unitypackage` を一度にスキャンし、1 つのパッケージ選択画面にまとめて表示します。インポート先プロジェクトを選べば、複数アイテムをまとめて 1 回の操作でインポートできます。
+ダウンロード済みの複数アイテムを選択し、収集された `.unitypackage` をまとめて 1 つの Unity プロジェクトへ投入できます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-batch-import.gif" width="820" alt="Avatool batch import demo" />
@@ -120,13 +122,15 @@ Archive extraction
 
 ### プロジェクト内検索
 
-「プロジェクト内検索」で対象の Unity プロジェクトを選び「照合」を実行すると、そのプロジェクトのフォルダ構成を実際にスキャンして、ライブラリ内のどのアイテムが既にインポート済みかを判定します。「このアイテム、あのプロジェクトに入れたっけ？」を確認する手間を省けます。
+Unity プロジェクトをスキャンし、ライブラリ内のどのアイテムがすでにインポート済みかを照合できます。
 
 <p align="center">
   <img src="assets/demo/avatool-demo-project-items.gif" width="820" alt="Avatool project items demo" />
 </p>
 
 ---
+
+<a id="features"></a>
 
 ## 主な機能
 
@@ -143,17 +147,14 @@ Archive extraction
 
 ### BOOTH 検索
 
-購入前の商品もアプリ内から直接調べられます。
-
-- キーワードでの BOOTH 商品検索
+- キーワードでの商品検索
 - トップページのおすすめセクション表示
 - 商品詳細・関連商品の閲覧
 - ほしいリストへの登録
 
 ### Download / archive processing
 
-- 複数アセットの一括ダウンロード
-- バックグラウンドダウンロード
+- 複数アセットの一括・バックグラウンドダウンロード
 - zip / 7z / rar の展開
 - パスワード付きアーカイブへの対応
 - 入れ子を含む `.unitypackage` の再帰収集
@@ -164,7 +165,6 @@ Archive extraction
 
 ### Unity import
 
-- Unity 起動状態に応じた実行経路の切り替え
 - 起動中プロジェクトへの Live import
 - `Unity.exe -batchmode` を使ったバックグラウンドインポート
 - 複数パッケージのキュー処理
@@ -181,7 +181,7 @@ Archive extraction
 - manifest の依存関係反映
 - 導入済みバージョンの追跡
 - Modular Avatar / NDMF / liltoon / SimpleFolderIcon などのセットアップ補助
-- FaceEmo など `.unitypackage` ベースの導入にも対応
+- `.unitypackage` ベースの導入にも対応
 
 ### Auto Bootstrap
 
@@ -220,8 +220,6 @@ Result recording
 
 ## Unity import modes
 
-Avatool は通常インポートとバックグラウンドインポートの 2 経路を持っています。
-
 | | Live import | Background import |
 |---|---|---|
 | 対象 Unity | 起動中のプロジェクト | Unity を閉じた状態でも可 |
@@ -231,9 +229,9 @@ Avatool は通常インポートとバックグラウンドインポートの 2 
 | 夜間・放置運用 | 不向き | 向いている |
 | 複数プロジェクト | 1 プロジェクトずつ | 順次処理可能 |
 
-インポート前にはプロジェクトパス、パッケージパス、多重実行状態などを検証します。
-
 ---
+
+<a id="setup"></a>
 
 ## セットアップ
 
@@ -249,11 +247,9 @@ Avatool は通常インポートとバックグラウンドインポートの 2 
 
 ### 配布版
 
-Avatool の配布版は updater CDN を使用しています。
+配布版は updater CDN を使用しています。
 
 - [配布メタデータ `latest.yml`](https://cdn.necco.xyz/file/avatool/latest.yml)
-
-アプリ起動時に更新を確認し、新しいバージョンがある場合はアプリ内から適用できます。
 
 ### 初回設定
 
@@ -265,33 +261,13 @@ Avatool の配布版は updater CDN を使用しています。
 
 ### データ保存先
 
-主なユーザーデータは次の場所に保存されます。
-
 ```text
 %APPDATA%\avatool\
 ```
 
 ダウンロードデータ、メタ情報、履歴などはこの配下で管理されます。
 
----
-
-## よく使う操作
-
-| やりたいこと | 操作 |
-|---|---|
-| 新しく購入したアセットを反映 | ライブラリ同期 |
-| 更新されたアセットだけ確認 | 「更新あり」でフィルター |
-| 特定アバター向けだけ表示 | アバターフィルター |
-| 複数アセットを先に保存 | 複数選択 → Download |
-| Unity を開いたまま追加 | Live import |
-| Unity を閉じてまとめて処理 | Background import |
-| VCC の新規プロジェクトを反映 | VCC project sync |
-| 新規プロジェクトを自動セットアップ | Auto Bootstrap |
-| 失敗原因を確認 | Operation log |
-
----
-
-## 認証とローカルデータ
+### 認証とローカルデータ
 
 BOOTH の認証状態は Electron の `safeStorage` を利用してローカルに保存します。
 
@@ -300,9 +276,9 @@ BOOTH の認証状態は Electron の `safeStorage` を利用してローカル�
 - PC 移行時は BOOTH への再ログインが必要
 - インポート履歴やダウンロードデータは `%APPDATA%\avatool\` 配下に保存
 
-ユーザーデータを手動で移動・削除すると Avatool が保持しているファイルパスと一致しなくなる場合があります。
-
 ---
+
+<a id="development"></a>
 
 ## 開発
 
@@ -311,7 +287,7 @@ BOOTH の認証状態は Electron の `safeStorage` を利用してローカル�
 - Windows
 - Node.js 22.x
 - npm
-- Unity / VCC は、該当連携を実際に検証する場合のみ必要
+- Unity / VCC は該当連携を検証する場合のみ必要
 
 ### Start
 
@@ -334,11 +310,6 @@ npm run start:rebuild
 npm run lint
 npm run test:unit
 npm test
-```
-
-Coverage:
-
-```bash
 npm run test:unit:coverage
 ```
 
@@ -356,9 +327,18 @@ Packaged directory only:
 npm run pack
 ```
 
-### README demo recording
+### CI
 
-README の GIF はアプリの実 UI を CDP 経由で操作し、ffmpeg で記録できます。
+`.github/workflows/ci.yml` は Windows / Node.js 22 で次を検証する構成です。
+
+```text
+npm ci
+npm run lint
+npm run test:unit
+npm run pack -- --publish never
+```
+
+### README demo recording
 
 ```bash
 npm run demo:readme
@@ -368,29 +348,13 @@ npm run demo:batch-import
 npm run demo:project-items
 ```
 
-デモ専用コードは通常配布バイナリには含まれません。
-
----
-
-## CI
-
-GitHub Actions では Windows 上で次を実行します。
-
-```text
-npm ci
-npm run lint
-npm run test:unit
-```
-
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-
 ---
 
 ## Repository layout
 
 ```text
 avatool-oss/
-├─ .github/workflows/    # CI
+├─ .github/              # CI / Issue forms / PR template
 ├─ __tests__/            # Jest tests
 ├─ assets/               # icons, styles, README demos
 ├─ lib/                  # application services / core logic
@@ -400,9 +364,16 @@ avatool-oss/
 ├─ main.js               # Electron main process
 ├─ preload.js            # renderer bridge
 ├─ render.js             # renderer entry
+├─ CONTRIBUTING.md
+├─ SECURITY.md
 ├─ LICENSE
 └─ package.json
 ```
+
+### Contributing / Security
+
+- コントリビューション手順: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- セキュリティ報告: [`SECURITY.md`](SECURITY.md)
 
 ---
 
@@ -410,11 +381,11 @@ avatool-oss/
 
 ### Unity を起動しておく必要はある？
 
-必須ではありません。起動中プロジェクトへすぐ投入する経路と、Unity を閉じた状態から batchmode で処理する経路があります。
+必須ではありません。起動中プロジェクトへの Live import と、Unity を閉じた状態でも使える batchmode import の両方があります。
 
 ### 1 商品に複数の `.unitypackage` がある場合は？
 
-収集されたファイルから対象を選択できます。すべてを選択することも、一部だけを選ぶこともできます。
+収集されたファイルから対象を選択できます。
 
 ### BOOTH の商品が更新されたら自動で分かる？
 
@@ -428,11 +399,9 @@ avatool-oss/
 
 認証情報は端末側の暗号化に依存するため、移行後は再ログインが必要です。
 
-### ダウンロードとインポートを別の日に実行できる？
-
-できます。先にダウンロードだけ完了させ、後から Unity import を実行できます。
-
 ---
+
+<a id="limitations"></a>
 
 ## 既知の制限
 
@@ -449,8 +418,6 @@ avatool-oss/
 ## Patch notes
 
 変更履歴は [`PatchNote/`](PatchNote/) にバージョンごとに保存しています。
-
-README 側に「最新バージョン」を固定記載せず、`package.json` とパッチノートを基準に管理します。
 
 ---
 
